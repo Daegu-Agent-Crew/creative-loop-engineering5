@@ -1,10 +1,11 @@
 import { analyzeFeedback } from "./feedback-rules.js";
 
 const STORAGE_KEY = "cle5-workspace-v2";
-const routes = new Set(["workspace", "history", "memory", "settings"]);
+const routes = new Set(["workspace", "history", "memory", "settings", "agent"]);
 const app = document.querySelector("#app");
 const toast = document.querySelector("#toast");
 const sidebar = document.querySelector(".sidebar");
+const modalRoot = document.querySelector("#modal-root");
 
 const stageOrder = ["draft", "review", "revision", "learned"];
 const stageLabels = {
@@ -84,7 +85,8 @@ function currentWork() {
 }
 
 function currentRoute() {
-  const route = location.hash.replace("#", "") || "workspace";
+  const hash = location.hash.replace("#", "") || "workspace";
+  const route = hash.startsWith("agent/") ? "agent" : hash;
   return routes.has(route) ? route : "workspace";
 }
 
@@ -150,7 +152,7 @@ function workspaceView() {
     ${pageHeader(
       work.title,
       "한 작품 안에서 작성, 피드백, 수정, 학습 승인을 끝냅니다.",
-      '<span class="save-state">이 브라우저에 자동 저장</span><button class="button" data-action="new-work">새 작업</button>'
+      '<span class="save-state">이 브라우저에 자동 저장</span><button class="button" data-action="import-agent-result">AI 결과 붙여넣기</button><button class="button primary" data-action="open-handoff">AI 에이전트에게 맡기기</button><button class="button" data-action="new-work">새 작업</button>'
     )}
     <div class="workspace">
       <aside class="stage-panel">
@@ -217,6 +219,281 @@ function editorContent(work) {
 
 function formatDocument(value) {
   return escapeHtml(value).replaceAll("\n", "<br>");
+}
+
+function encodePacket(packet) {
+  const bytes = new TextEncoder().encode(JSON.stringify(packet));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary)
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "");
+}
+
+function decodePacket(encoded) {
+  const base64 = encoded.replaceAll("-", "+").replaceAll("_", "/");
+  const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+function handoffPacket(task, request) {
+  const work = currentWork();
+  return {
+    protocol: "CLE5_AGENT_HANDOFF_V1",
+    task,
+    request,
+    productPurpose:
+      "이전 작업의 경험을 기억해 같은 실패를 줄이는 창작 작업실",
+    agentRole:
+      "당신은 관리자가 아니라 창작자다. 작품을 실제로 쓰고 고치며, 판단 근거를 간결하게 남긴다.",
+    work: {
+      id: work.id,
+      title: work.title,
+      intent: work.intent,
+      stage: work.stage,
+      original: work.original,
+      revision: work.revision,
+      feedback: work.feedback,
+      proposals: work.proposals
+    },
+    approvedMemory: store.memory
+      .filter((item) => item.status === "active")
+      .map(({ statement, source }) => ({ statement, source })),
+    operatingRules: [
+      "승인된 기억은 제약이 아니라 현재 작품을 더 정확히 만들기 위한 경험으로 사용한다.",
+      "기존 문장을 기계적으로 복제하지 않는다.",
+      "피드백과 창작 의도가 충돌하면 충돌을 명시하고 작품의 가치를 우선해 판단한다.",
+      "결과물은 아래 CLE5 반환 형식으로 끝낸다."
+    ],
+    returnFormat: {
+      contentStart: "---CLE5-CONTENT-START---",
+      contentEnd: "---CLE5-CONTENT-END---",
+      noteStart: "---CLE5-NOTE-START---",
+      noteEnd: "---CLE5-NOTE-END---",
+      memoryStart: "---CLE5-MEMORY-START---",
+      memoryEnd: "---CLE5-MEMORY-END---"
+    }
+  };
+}
+
+function openHandoffModal() {
+  const work = currentWork();
+  const suggestedTask = !work.original.trim()
+    ? "초안 작성"
+    : work.feedback.length
+      ? "피드백을 반영한 수정본 작성"
+      : "작품 검토와 개선";
+  modalRoot.innerHTML = `
+    <div class="modal-backdrop">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="handoff-title">
+        <div class="modal-head">
+          <div><span class="section-label">Agent handoff</span><h2 id="handoff-title">AI 에이전트에게 창작 맡기기</h2></div>
+          <button class="icon-button" data-action="close-modal" aria-label="닫기">×</button>
+        </div>
+        <p class="modal-help">Codex, Claude, OpenClaw 등 브라우저나 URL을 읽을 수 있는 에이전트에게 아래 링크를 전달하세요. 작품과 승인된 기억은 링크 안에 포함되며 서버에 저장되지 않습니다.</p>
+        <label>맡길 작업
+          <select id="handoff-task">
+            ${["초안 작성", "피드백을 반영한 수정본 작성", "작품 검토와 개선", "자유 창작"].map((task) =>
+              `<option ${task === suggestedTask ? "selected" : ""}>${task}</option>`
+            ).join("")}
+          </select>
+        </label>
+        <label>추가 요청
+          <textarea id="handoff-request" rows="4" placeholder="예: 마지막 장면의 여운을 더 길게 만들되 설명 대사는 쓰지 마."></textarea>
+        </label>
+        <div class="handoff-summary">
+          <span>${escapeHtml(work.title)}</span>
+          <span>${store.memory.filter((item) => item.status === "active").length}개 기억</span>
+          <span>${work.feedback.length}개 피드백</span>
+        </div>
+        <div id="handoff-link-area"></div>
+        <div class="modal-actions">
+          <button class="button" data-action="close-modal">취소</button>
+          <button class="button primary" data-action="create-handoff-link">공유 링크 만들기</button>
+        </div>
+      </section>
+    </div>`;
+}
+
+function createHandoffLink() {
+  const task = document.querySelector("#handoff-task").value;
+  const request = document.querySelector("#handoff-request").value.trim();
+  const packet = handoffPacket(task, request);
+  const link = `${location.origin}${location.pathname}#agent/${encodePacket(packet)}`;
+  store.pendingHandoff = {
+    workId: packet.work.id,
+    task,
+    createdAt: new Date().toISOString()
+  };
+  saveStore();
+  const area = document.querySelector("#handoff-link-area");
+  area.innerHTML = `
+    <label>에이전트에게 전달할 링크
+      <textarea id="handoff-link" rows="3" readonly>${escapeHtml(link)}</textarea>
+    </label>
+    <button class="button approve wide" data-action="copy-handoff-link">링크 복사</button>
+    <p class="link-warning">링크에는 현재 작품과 기억이 포함됩니다. 신뢰하는 에이전트에게만 전달하세요.</p>`;
+}
+
+function agentView() {
+  let packet;
+  try {
+    packet = decodePacket(location.hash.split("/").slice(1).join("/"));
+  } catch {
+    return `
+      ${pageHeader("Agent Brief를 열 수 없습니다", "링크가 잘렸거나 올바른 CLE5 Handoff 링크가 아닙니다.")}
+      <div class="page-body"><div class="empty-state"><a class="button primary" href="#workspace">Workspace로 돌아가기</a></div></div>`;
+  }
+
+  const feedback = packet.work.feedback ?? [];
+  return `
+    ${pageHeader(
+      "CLE5 Agent Brief",
+      "이 화면의 모든 내용을 읽고 창작자 역할을 수행하세요.",
+      '<button class="button" data-action="copy-agent-brief">Brief 복사</button>'
+    )}
+    <div class="agent-brief" id="agent-brief">
+      <section class="agent-mission">
+        <span class="section-label">Mission</span>
+        <h2>${escapeHtml(packet.task)}</h2>
+        <p>${escapeHtml(packet.request || "추가 요청 없음. 작품의 의도와 피드백, 승인된 기억을 바탕으로 최선의 결과를 만든다.")}</p>
+      </section>
+      <section class="brief-section">
+        <span class="section-label">Creative role</span>
+        <h3>${escapeHtml(packet.agentRole)}</h3>
+        <p>${escapeHtml(packet.productPurpose)}</p>
+      </section>
+      <section class="brief-section">
+        <span class="section-label">Work</span>
+        <h3>${escapeHtml(packet.work.title)}</h3>
+        <dl class="brief-meta">
+          <div><dt>창작 의도</dt><dd>${escapeHtml(packet.work.intent || "미작성")}</dd></div>
+          <div><dt>현재 단계</dt><dd>${escapeHtml(stageLabels[packet.work.stage] ?? packet.work.stage)}</dd></div>
+        </dl>
+      </section>
+      <div class="brief-documents">
+        <section class="brief-section">
+          <span class="section-label">Original</span>
+          <div class="brief-document">${formatDocument(packet.work.original || "원본 없음")}</div>
+        </section>
+        <section class="brief-section">
+          <span class="section-label">Current revision</span>
+          <div class="brief-document">${formatDocument(packet.work.revision || "수정본 없음")}</div>
+        </section>
+      </div>
+      <section class="brief-section">
+        <span class="section-label">Human feedback</span>
+        ${feedback.length
+          ? `<div class="brief-list">${feedback.map((item) =>
+              `<blockquote>“${escapeHtml(item.text)}”<footer>${escapeHtml(item.tag)}</footer></blockquote>`
+            ).join("")}</div>`
+          : '<p>아직 사람 피드백이 없습니다.</p>'}
+      </section>
+      <section class="brief-section memory-brief">
+        <span class="section-label">Approved memory</span>
+        <ol>${packet.approvedMemory.map((item) =>
+          `<li>${escapeHtml(item.statement)}<small>${escapeHtml(item.source)}</small></li>`
+        ).join("")}</ol>
+      </section>
+      <section class="brief-section">
+        <span class="section-label">Operating rules</span>
+        <ul class="rule-list">${packet.operatingRules.map((rule) => `<li>${escapeHtml(rule)}</li>`).join("")}</ul>
+      </section>
+      <section class="return-contract">
+        <span class="section-label">Return contract</span>
+        <h3>최종 응답의 마지막에 아래 형식을 그대로 사용하세요.</h3>
+        <pre>---CLE5-CONTENT-START---
+[완성한 초안 또는 수정본]
+---CLE5-CONTENT-END---
+
+---CLE5-NOTE-START---
+[무엇을 판단했고 왜 그렇게 했는지 3~5문장]
+---CLE5-NOTE-END---
+
+---CLE5-MEMORY-START---
+[다음 작업에도 재사용할 가치가 있는 판단 한 문장. 없으면 없음]
+---CLE5-MEMORY-END---</pre>
+      </section>
+    </div>`;
+}
+
+function openAgentResultModal() {
+  const target = store.pendingHandoff?.task?.includes("초안") ? "original" : "revision";
+  modalRoot.innerHTML = `
+    <div class="modal-backdrop">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="result-title">
+        <div class="modal-head">
+          <div><span class="section-label">Agent result</span><h2 id="result-title">AI 에이전트 결과 가져오기</h2></div>
+          <button class="icon-button" data-action="close-modal" aria-label="닫기">×</button>
+        </div>
+        <p class="modal-help">에이전트의 전체 응답을 그대로 붙여넣으세요. CLE5 표시가 있으면 작품, 판단 근거, 기억 제안을 자동으로 분리합니다.</p>
+        <label>반영 위치
+          <select id="result-target">
+            <option value="original" ${target === "original" ? "selected" : ""}>원본</option>
+            <option value="revision" ${target === "revision" ? "selected" : ""}>수정본</option>
+          </select>
+        </label>
+        <label>에이전트 응답
+          <textarea id="agent-result" rows="13" placeholder="Codex, Claude, OpenClaw의 응답 전체를 붙여넣으세요."></textarea>
+        </label>
+        <div class="modal-actions">
+          <button class="button" data-action="close-modal">취소</button>
+          <button class="button primary" data-action="apply-agent-result">Workspace에 반영</button>
+        </div>
+      </section>
+    </div>`;
+}
+
+function extractMarked(text, name) {
+  const start = `---CLE5-${name}-START---`;
+  const end = `---CLE5-${name}-END---`;
+  const startIndex = text.indexOf(start);
+  const endIndex = text.indexOf(end);
+  if (startIndex < 0 || endIndex < 0 || endIndex <= startIndex) return "";
+  return text.slice(startIndex + start.length, endIndex).trim();
+}
+
+function applyAgentResult() {
+  const response = document.querySelector("#agent-result").value.trim();
+  if (!response) {
+    showToast("에이전트 응답을 붙여넣으세요.");
+    return;
+  }
+  const target = document.querySelector("#result-target").value;
+  const content = extractMarked(response, "CONTENT") || response;
+  const note = extractMarked(response, "NOTE");
+  const memory = extractMarked(response, "MEMORY");
+  const work = currentWork();
+  work[target] = content;
+  work.stage = target === "revision" ? "revision" : "draft";
+  work.updatedAt = new Date().toISOString();
+  if (note) {
+    work.feedback.push({
+      id: `AGENT-${Date.now()}`,
+      text: note,
+      tag: "에이전트 판단",
+      createdAt: new Date().toISOString()
+    });
+  }
+  if (memory && memory !== "없음") {
+    work.proposals.push({
+      id: `PROPOSAL-${Date.now()}`,
+      feedbackId: work.feedback.at(-1)?.id ?? null,
+      tag: "에이전트 제안",
+      learning: memory,
+      action: "수정 결과를 확인한 뒤 다음 작업 적용 여부를 결정한다.",
+      status: "pending"
+    });
+  }
+  workspaceMode = target === "revision" ? "compare" : "original";
+  delete store.pendingHandoff;
+  saveStore();
+  modalRoot.innerHTML = "";
+  render();
+  showToast("에이전트 결과를 Workspace에 반영했습니다.");
 }
 
 function feedbackPanel(work) {
@@ -342,7 +619,8 @@ function render() {
     workspace: workspaceView,
     history: historyView,
     memory: memoryView,
-    settings: settingsView
+    settings: settingsView,
+    agent: agentView
   };
   app.innerHTML = views[route]();
   document.querySelectorAll("[data-route]").forEach((link) => {
@@ -468,6 +746,11 @@ document.addEventListener("change", async (event) => {
 });
 
 document.addEventListener("click", (event) => {
+  if (event.target.classList.contains("modal-backdrop")) {
+    modalRoot.innerHTML = "";
+    return;
+  }
+
   const modeButton = event.target.closest("[data-mode]");
   if (modeButton) {
     workspaceMode = modeButton.dataset.mode;
@@ -491,7 +774,23 @@ document.addEventListener("click", (event) => {
   if (!action) return;
 
   const work = currentWork();
-  if (action === "new-work") {
+  if (action === "open-handoff") {
+    openHandoffModal();
+  } else if (action === "create-handoff-link") {
+    createHandoffLink();
+  } else if (action === "copy-handoff-link") {
+    navigator.clipboard?.writeText(document.querySelector("#handoff-link").value);
+    showToast("에이전트에게 전달할 링크를 복사했습니다.");
+  } else if (action === "import-agent-result") {
+    openAgentResultModal();
+  } else if (action === "apply-agent-result") {
+    applyAgentResult();
+  } else if (action === "copy-agent-brief") {
+    navigator.clipboard?.writeText(document.querySelector("#agent-brief").innerText);
+    showToast("Agent Brief 전체를 복사했습니다.");
+  } else if (action === "close-modal") {
+    modalRoot.innerHTML = "";
+  } else if (action === "new-work") {
     createWork();
   } else if (action === "request-review") {
     work.stage = "review";
