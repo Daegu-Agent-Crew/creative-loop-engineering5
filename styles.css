@@ -696,6 +696,110 @@ select:focus {
 .privacy-state { color: var(--mint-dark); font-size: 11px; font-weight: 900; }
 .danger-zone { border-bottom-color: #d9b2aa; }
 
+.github-sync-section {
+  padding-block: 32px;
+  grid-template-columns: minmax(220px, .72fr) minmax(420px, 1.28fr);
+  align-items: start;
+}
+
+.github-section-copy h2 { margin-top: 8px; }
+
+.github-form {
+  padding: 22px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  display: grid;
+  gap: 14px;
+}
+
+.github-form label {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.github-form input {
+  width: 100%;
+  margin-top: 7px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.github-form input:focus {
+  outline: 2px solid var(--mint);
+  outline-offset: 1px;
+}
+
+.github-form-row {
+  display: grid;
+  grid-template-columns: minmax(100px, .45fr) minmax(220px, 1fr);
+  gap: 12px;
+}
+
+.token-help,
+.sync-meta {
+  margin: -3px 0 0 !important;
+  font-size: 9px !important;
+}
+
+.github-status {
+  min-height: 38px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  background: #f6f6f1;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #a1a7a2;
+  flex: 0 0 auto;
+}
+
+.github-status.connected {
+  border-color: #9bcdb9;
+  background: var(--mint-soft);
+  color: var(--mint-dark);
+}
+
+.github-status.connected .status-dot { background: var(--mint-dark); }
+
+.github-status.error {
+  border-color: #deb1a6;
+  background: var(--coral-soft);
+  color: var(--red);
+}
+
+.github-status.error .status-dot { background: var(--red); }
+
+.github-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.github-actions .danger-link {
+  margin-left: auto;
+  border-color: transparent;
+  color: var(--red);
+}
+
+.github-actions button:disabled {
+  cursor: wait;
+  opacity: .55;
+}
+
 .import-preview {
   margin-top: 22px;
   padding: 16px;
@@ -1014,6 +1118,9 @@ select:focus {
   .row-arrow { grid-column: 2; grid-row: 1 / span 3; }
   .settings-section { align-items: start; }
   .settings-actions { flex-wrap: wrap; }
+  .github-sync-section,
+  .github-form-row { grid-template-columns: 1fr; }
+  .github-actions .danger-link { margin-left: 0; }
   .modal-backdrop { padding: 12px; }
   .modal { max-height: calc(100vh - 24px); padding: 20px; }
   .brief-documents { grid-template-columns: 1fr; }

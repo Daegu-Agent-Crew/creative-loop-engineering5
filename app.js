@@ -1,6 +1,15 @@
 import { analyzeFeedback } from "./feedback-rules.js";
+import {
+  createGitHubSyncClient,
+  GitHubApiError,
+  parseRepository,
+  resolveWriteSha,
+  validateWorkspace
+} from "./github-sync.js";
 
 const STORAGE_KEY = "cle5-workspace-v2";
+const GITHUB_SETTINGS_KEY = "cle5-github-settings-v1";
+const GITHUB_SYNC_META_KEY = "cle5-github-sync-meta-v1";
 const routes = new Set(["workspace", "history", "memory", "settings", "agent"]);
 const app = document.querySelector("#app");
 const toast = document.querySelector("#toast");
@@ -19,6 +28,15 @@ let store = loadStore();
 let workspaceMode = "original";
 let selectedWorkId = store.activeWorkId;
 let pendingImport = null;
+let githubSettings = loadGitHubSettings();
+let githubSyncMeta = loadJsonStorage(GITHUB_SYNC_META_KEY, {});
+let githubStatus = {
+  state: githubSettings.token ? "saved" : "disconnected",
+  message: githubSettings.token
+    ? "설정이 이 브라우저에 저장되어 있습니다."
+    : "아직 GitHub 저장소를 연결하지 않았습니다."
+};
+let githubBusy = false;
 
 function initialStore() {
   return {
@@ -69,6 +87,40 @@ function loadStore() {
 function saveStore() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
   updateSidebarStatus();
+}
+
+function loadJsonStorage(key, fallback) {
+  try {
+    const saved = localStorage.getItem(key);
+    return saved ? JSON.parse(saved) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function loadGitHubSettings() {
+  return {
+    repository: "Daegu-Agent-Crew/creative-loop-engineering5-private",
+    branch: "main",
+    path: "workspace/cle5-workspace.json",
+    token: "",
+    ...loadJsonStorage(GITHUB_SETTINGS_KEY, {})
+  };
+}
+
+function saveGitHubSettings(settings) {
+  const previousTarget = [
+    githubSettings.repository,
+    githubSettings.branch,
+    githubSettings.path
+  ].join(":");
+  const nextTarget = [settings.repository, settings.branch, settings.path].join(":");
+  githubSettings = settings;
+  localStorage.setItem(GITHUB_SETTINGS_KEY, JSON.stringify(githubSettings));
+  if (previousTarget !== nextTarget) {
+    githubSyncMeta = {};
+    localStorage.removeItem(GITHUB_SYNC_META_KEY);
+  }
 }
 
 function escapeHtml(value = "") {
@@ -591,8 +643,13 @@ function memoryView() {
 }
 
 function settingsView() {
+  const statusClass = ["connected", "working"].includes(githubStatus.state)
+    ? "connected"
+    : githubStatus.state === "error"
+      ? "error"
+      : "";
   return `
-    ${pageHeader("설정", "계정이나 서버 없이 이 브라우저에서 작업을 보관합니다.")}
+    ${pageHeader("설정", "브라우저에 자동 저장하고 필요할 때 GitHub에 명시적으로 동기화합니다.")}
     <div class="page-body settings-layout">
       <section class="settings-section">
         <div><h2>데이터 보관</h2><p>현재 작업은 이 브라우저에 자동 저장됩니다. 다른 기기로 옮길 때 파일로 내보내세요.</p></div>
@@ -601,9 +658,45 @@ function settingsView() {
           <label class="button file-button">작업 가져오기<input type="file" id="import-file" accept="application/json"></label>
         </div>
       </section>
+      <section class="settings-section github-sync-section">
+        <div class="github-section-copy">
+          <span class="section-label">GitHub sync</span>
+          <h2>GitHub 저장소 연결</h2>
+          <p>작업공간 JSON만 지정한 저장소에 커밋합니다. PAT는 이 브라우저에만 저장되며 Pages 코드, 공유 링크, 내보내기 파일에는 포함되지 않습니다.</p>
+        </div>
+        <div class="github-form">
+          <label>저장소
+            <input id="github-repository" autocomplete="off" value="${escapeHtml(githubSettings.repository)}" placeholder="owner/repository">
+          </label>
+          <div class="github-form-row">
+            <label>브랜치
+              <input id="github-branch" autocomplete="off" value="${escapeHtml(githubSettings.branch)}">
+            </label>
+            <label>데이터 경로
+              <input id="github-path" autocomplete="off" value="${escapeHtml(githubSettings.path)}">
+            </label>
+          </div>
+          <label>Fine-grained PAT
+            <input id="github-token" type="password" autocomplete="off" value="${escapeHtml(githubSettings.token)}" placeholder="github_pat_...">
+          </label>
+          <p class="token-help">비공개 저장소의 Metadata 읽기와 Contents 읽기·쓰기 권한만 부여하세요. 공용 기기에서는 사용하지 마세요.</p>
+          <div class="github-status ${statusClass}">
+            <span class="status-dot"></span>
+            <span>${escapeHtml(githubStatus.message)}</span>
+          </div>
+          ${githubSyncMeta.sha ? `<p class="sync-meta">마지막 동기화 SHA <code>${escapeHtml(githubSyncMeta.sha.slice(0, 10))}</code>${githubSyncMeta.syncedAt ? ` · ${escapeHtml(new Date(githubSyncMeta.syncedAt).toLocaleString("ko-KR"))}` : ""}</p>` : ""}
+          <div class="github-actions">
+            <button class="button" data-action="save-github" ${githubBusy ? "disabled" : ""}>설정 저장</button>
+            <button class="button" data-action="test-github" ${githubBusy ? "disabled" : ""}>연결 테스트</button>
+            <button class="button" data-action="pull-github" ${githubBusy ? "disabled" : ""}>GitHub에서 불러오기</button>
+            <button class="button primary" data-action="push-github" ${githubBusy ? "disabled" : ""}>GitHub에 커밋</button>
+            <button class="button danger-link" data-action="disconnect-github" ${githubBusy ? "disabled" : ""}>연결 해제</button>
+          </div>
+        </div>
+      </section>
       <section class="settings-section">
-        <div><h2>공개 범위</h2><p>브라우저에 입력한 작품과 피드백은 자동으로 GitHub Pages에 올라가지 않습니다.</p></div>
-        <span class="privacy-state">로컬 전용</span>
+        <div><h2>공개 범위</h2><p>작품 데이터는 공개 Pages 저장소가 아니라 위에서 지정한 저장소에만 커밋됩니다. 자동 동기화하지 않으며 매번 사용자가 버튼을 눌러야 합니다.</p></div>
+        <span class="privacy-state">${githubSettings.token ? "로컬 + GitHub" : "로컬 전용"}</span>
       </section>
       <section class="settings-section danger-zone">
         <div><h2>초기화</h2><p>현재 브라우저의 작업, 피드백, 승인된 기억을 기본 예제로 되돌립니다.</p></div>
@@ -723,6 +816,134 @@ function exportData() {
   showToast("현재 작업과 기억을 파일로 내보냈습니다.");
 }
 
+function readGitHubForm() {
+  const settings = {
+    repository: document.querySelector("#github-repository")?.value.trim() || "",
+    branch: document.querySelector("#github-branch")?.value.trim() || "",
+    path: document.querySelector("#github-path")?.value.trim() || "",
+    token: document.querySelector("#github-token")?.value.trim() || ""
+  };
+  parseRepository(settings.repository);
+  if (!settings.branch || !settings.path || !settings.token) {
+    throw new Error("저장소, 브랜치, 데이터 경로, PAT를 모두 입력하세요.");
+  }
+  return settings;
+}
+
+function persistGitHubForm() {
+  const settings = readGitHubForm();
+  saveGitHubSettings(settings);
+  githubStatus = {
+    state: "saved",
+    message: "설정을 이 브라우저에 저장했습니다."
+  };
+  return settings;
+}
+
+function gitHubErrorMessage(error) {
+  if (error instanceof GitHubApiError) {
+    if (error.status === 401) return "PAT가 유효하지 않거나 만료되었습니다.";
+    if (error.status === 403) return "저장소 Contents 권한이 부족합니다.";
+    if (error.status === 404) return "저장소를 찾지 못했습니다. 저장소 이름과 PAT 접근 범위를 확인하세요.";
+    if (error.status === 409) return "GitHub 파일 상태가 변경되었습니다. 먼저 다시 불러오세요.";
+  }
+  return error.message || "GitHub 연결 중 오류가 발생했습니다.";
+}
+
+async function runGitHubAction(action) {
+  if (githubBusy) return;
+  try {
+    const settings = persistGitHubForm();
+    githubBusy = true;
+    githubStatus = { state: "working", message: "GitHub와 통신하고 있습니다." };
+    render();
+    await action(createGitHubSyncClient(settings));
+  } catch (error) {
+    githubStatus = { state: "error", message: gitHubErrorMessage(error) };
+  } finally {
+    githubBusy = false;
+    render();
+  }
+}
+
+async function testGitHubConnection() {
+  await runGitHubAction(async (client) => {
+    const repository = await client.inspectRepository();
+    const canPush = repository.permissions?.push !== false;
+    githubStatus = {
+      state: canPush ? "connected" : "error",
+      message: canPush
+        ? `${repository.full_name}에 읽기·쓰기 연결이 확인됐습니다.`
+        : `${repository.full_name}은 읽기만 가능합니다. Contents 쓰기 권한을 추가하세요.`
+    };
+  });
+}
+
+async function pullWorkspaceFromGitHub() {
+  await runGitHubAction(async (client) => {
+    const remote = await client.readWorkspace();
+    if (!remote) {
+      githubStatus = {
+        state: "connected",
+        message: "원격 작업 파일이 아직 없습니다. 현재 작업을 처음 커밋할 수 있습니다."
+      };
+      return;
+    }
+    if (!window.confirm("GitHub 작업으로 이 브라우저의 현재 작업을 교체할까요?")) {
+      githubStatus = { state: "connected", message: "불러오기를 취소했습니다." };
+      return;
+    }
+    store = remote.workspace;
+    selectedWorkId = store.activeWorkId;
+    workspaceMode = "original";
+    saveStore();
+    githubSyncMeta = {
+      sha: remote.sha,
+      syncedAt: new Date().toISOString()
+    };
+    localStorage.setItem(GITHUB_SYNC_META_KEY, JSON.stringify(githubSyncMeta));
+    githubStatus = {
+      state: "connected",
+      message: "GitHub 작업을 이 브라우저로 불러왔습니다."
+    };
+  });
+}
+
+async function pushWorkspaceToGitHub() {
+  await runGitHubAction(async (client) => {
+    const remote = await client.readWorkspace();
+    const writeSha = resolveWriteSha(remote?.sha, githubSyncMeta.sha);
+    const result = await client.writeWorkspace({
+      workspace: store,
+      sha: writeSha,
+      message: `sync: update CLE5 workspace (${new Date().toISOString()})`
+    });
+    githubSyncMeta = {
+      sha: result.sha,
+      syncedAt: new Date().toISOString(),
+      commitUrl: result.commitUrl
+    };
+    localStorage.setItem(GITHUB_SYNC_META_KEY, JSON.stringify(githubSyncMeta));
+    githubStatus = {
+      state: "connected",
+      message: "현재 작업과 기억을 GitHub에 커밋했습니다."
+    };
+  });
+}
+
+function disconnectGitHub() {
+  if (!window.confirm("이 브라우저에 저장된 GitHub PAT와 동기화 정보를 삭제할까요?")) return;
+  localStorage.removeItem(GITHUB_SETTINGS_KEY);
+  localStorage.removeItem(GITHUB_SYNC_META_KEY);
+  githubSettings = loadGitHubSettings();
+  githubSyncMeta = {};
+  githubStatus = {
+    state: "disconnected",
+    message: "GitHub 연결 정보를 삭제했습니다."
+  };
+  render();
+}
+
 document.addEventListener("input", (event) => {
   if (event.target.id === "work-title") updateWork("title", event.target.value);
   if (event.target.id === "work-intent") updateWork("intent", event.target.value);
@@ -735,7 +956,7 @@ document.addEventListener("change", async (event) => {
   if (event.target.id !== "import-file") return;
   try {
     pendingImport = JSON.parse(await event.target.files[0].text());
-    if (!Array.isArray(pendingImport.works) || !Array.isArray(pendingImport.memory)) {
+    if (!validateWorkspace(pendingImport)) {
       throw new Error("invalid workspace");
     }
     render();
@@ -745,7 +966,7 @@ document.addEventListener("change", async (event) => {
   }
 });
 
-document.addEventListener("click", (event) => {
+document.addEventListener("click", async (event) => {
   if (event.target.classList.contains("modal-backdrop")) {
     modalRoot.innerHTML = "";
     return;
@@ -837,6 +1058,23 @@ document.addEventListener("click", (event) => {
     render();
   } else if (action === "export-data") {
     exportData();
+  } else if (action === "save-github") {
+    try {
+      persistGitHubForm();
+      render();
+      showToast("GitHub 설정을 이 브라우저에 저장했습니다.");
+    } catch (error) {
+      githubStatus = { state: "error", message: gitHubErrorMessage(error) };
+      render();
+    }
+  } else if (action === "test-github") {
+    await testGitHubConnection();
+  } else if (action === "pull-github") {
+    await pullWorkspaceFromGitHub();
+  } else if (action === "push-github") {
+    await pushWorkspaceToGitHub();
+  } else if (action === "disconnect-github") {
+    disconnectGitHub();
   } else if (action === "confirm-import") {
     store = pendingImport;
     selectedWorkId = store.activeWorkId;
