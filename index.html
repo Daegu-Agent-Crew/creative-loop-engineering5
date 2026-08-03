@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="CLE5 자기성장형 창작 에이전트 Control Room">
+  <meta name="theme-color" content="#171a18">
+  <title>CLE5 Control Room</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="logo" href="#dashboard" aria-label="CLE5 홈">
+        <span class="logo-mark">5</span>
+        <span>CLE5</span>
+      </a>
+      <nav class="nav" aria-label="주요 화면">
+        <a href="#dashboard" data-route="dashboard"><span>⌂</span>Control Room</a>
+        <a href="#feedback" data-route="feedback"><span>◎</span>Feedback Inbox</a>
+        <a href="#cases" data-route="cases"><span>▣</span>Case Library</a>
+        <a href="#principles" data-route="principles"><span>⇧</span>Principles</a>
+        <a href="#boot" data-route="boot"><span>◇</span>Session Boot</a>
+      </nav>
+      <div class="sidebar-status">
+        <strong>EP-PILOT · Growth Cycle</strong>
+        <span>writer / critic isolated</span>
+        <span id="context-budget">context loading...</span>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="mobile-header">
+        <a class="logo" href="#dashboard"><span class="logo-mark">5</span><span>CLE5</span></a>
+        <button class="icon-button" id="menu-button" type="button" aria-label="메뉴 열기">☰</button>
+      </header>
+      <div id="app" class="view" aria-live="polite">
+        <div class="loading">성장 기록을 불러오는 중...</div>
+      </div>
+    </main>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

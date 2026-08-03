@@ -1,0 +1,32 @@
+[
+  {
+    "id": "FB-0001",
+    "episodeId": "EP-PILOT",
+    "source": "human",
+    "quote": "그림이 이미 말하는데 대사가 한 번 더 설명한다.",
+    "evidence": [
+      {
+        "artifact": "pilot://EP-PILOT/storyboard",
+        "reference": "panel-18"
+      }
+    ],
+    "tags": ["설명과잉", "기교노출"],
+    "hypothesis": "대사를 삭제하고 인접 패널의 침묵을 유지한다.",
+    "status": "case-candidate"
+  },
+  {
+    "id": "FB-0002",
+    "episodeId": "EP-PILOT",
+    "source": "human",
+    "quote": "마지막 침묵은 좋다. 손을 더 대지 않아도 된다.",
+    "evidence": [
+      {
+        "artifact": "pilot://EP-PILOT/storyboard",
+        "reference": "panel-31"
+      }
+    ],
+    "tags": ["여백성공"],
+    "hypothesis": "빈 의자와 멈춘 컵을 유지하고 설명을 추가하지 않는다.",
+    "status": "resolved"
+  }
+]

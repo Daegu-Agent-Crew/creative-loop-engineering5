@@ -1,0 +1,21 @@
+{
+  "id": "ASM-0001",
+  "episodeId": "EP-PILOT",
+  "role": "writer",
+  "createdBeforeHumanFeedback": true,
+  "dimensions": [
+    {
+      "principle": "무심함",
+      "score": 72,
+      "evidence": ["panel-18", "panel-31"]
+    },
+    {
+      "principle": "그리움",
+      "score": 81,
+      "evidence": ["panel-31"]
+    }
+  ],
+  "uncertainties": [
+    "panel-18의 대사가 장면을 과도하게 설명할 가능성이 있다."
+  ]
+}

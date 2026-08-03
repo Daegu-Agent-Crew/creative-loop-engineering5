@@ -1,0 +1,19 @@
+{
+  "id": "CASE-0002",
+  "title": "빈 의자로 남긴 부재",
+  "tags": ["여백성공"],
+  "before": {
+    "artifact": "pilot://EP-PILOT/panel-31-before",
+    "description": "떠난 인물을 회상 장면으로 다시 보여준다.",
+    "reason": "부재를 설명하는 이미지가 현재의 빈 공간을 가린다."
+  },
+  "after": {
+    "artifact": "pilot://EP-PILOT/panel-31-after",
+    "description": "빈 의자와 멈춘 컵만 두고 대사 없이 장면을 끝낸다.",
+    "reason": "사라진 사람보다 남아 있는 관계의 흔적을 느끼게 한다."
+  },
+  "judgment": "부재는 회상 장면보다 현재 공간의 변화로 전달할 수 있다.",
+  "sourceFeedback": ["FB-0002"],
+  "representative": true,
+  "status": "active"
+}

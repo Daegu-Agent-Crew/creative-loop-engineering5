@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "tags": [
+    {
+      "id": "technique-exposure",
+      "label": "기교노출",
+      "definition": "상징이나 연출 기법이 경험보다 먼저 보인다.",
+      "polarity": "failure"
+    },
+    {
+      "id": "over-explanation",
+      "label": "설명과잉",
+      "definition": "대사나 자막이 화면이 이미 전달한 의미를 반복한다.",
+      "polarity": "failure"
+    },
+    {
+      "id": "absence-of-sense",
+      "label": "감각부재",
+      "definition": "개념은 있으나 몸으로 느낄 수 있는 감각 정보가 없다.",
+      "polarity": "failure"
+    },
+    {
+      "id": "space-success",
+      "label": "여백성공",
+      "definition": "침묵과 빈 공간이 관계의 부재와 시간을 전달한다.",
+      "polarity": "success"
+    }
+  ]
+}

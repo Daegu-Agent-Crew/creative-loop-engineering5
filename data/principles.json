@@ -1,0 +1,49 @@
+{
+  "version": "v0.1",
+  "thresholds": {
+    "watch": 2,
+    "promotionCandidate": 3,
+    "retirementEpisodes": 4
+  },
+  "principles": [
+    {
+      "id": "PRN-001",
+      "statement": "감정의 이름을 쓰지 않고 몸, 거리, 사물의 변화로 전달한다.",
+      "state": "active",
+      "tags": ["감각부재"],
+      "caseIds": [],
+      "lastSeenEpisode": "EP-PILOT",
+      "humanApproval": {
+        "status": "approved",
+        "approvedBy": "source-philosophy",
+        "approvedAt": "2026-08-03T00:00:00Z"
+      }
+    },
+    {
+      "id": "PRN-002",
+      "statement": "상징과 대사가 같은 의미를 반복하는지 검사한다.",
+      "state": "watch",
+      "tags": ["기교노출", "설명과잉"],
+      "caseIds": ["CASE-0001"],
+      "lastSeenEpisode": "EP-PILOT",
+      "humanApproval": {
+        "status": "not-required",
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "PRN-003",
+      "statement": "빈 공간이 부재와 시간을 작동시키는지 확인한다.",
+      "state": "active",
+      "tags": ["여백성공"],
+      "caseIds": ["CASE-0002"],
+      "lastSeenEpisode": "EP-PILOT",
+      "humanApproval": {
+        "status": "approved",
+        "approvedBy": "source-philosophy",
+        "approvedAt": "2026-08-03T00:00:00Z"
+      }
+    }
+  ]
+}
