@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EP002 — 카운트다운 (CLE5 Creative Loop)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800&display=swap');
+  
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    font-family: 'Nanum Gothic', sans-serif;
+    background: #0a0a0a;
+    color: #e0e0e0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+  }
+  
+  .storyboard {
+    max-width: 1100px;
+    width: 100%;
+  }
+  
+  .header {
+    background: linear-gradient(135deg, #1a0a0a, #3b0000, #1a0a0a);
+    padding: 30px;
+    border-radius: 8px;
+    border: 1px solid #333;
+    margin-bottom: 20px;
+  }
+  
+  .header h1 {
+    font-size: 32px;
+    font-weight: 800;
+    color: #ff4444;
+    text-shadow: 0 0 20px rgba(255,68,68,0.3);
+  }
+  
+  .header .subtitle {
+    font-size: 14px;
+    color: #888;
+    margin-top: 8px;
+  }
+  
+  .header .tags {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  
+  .tag {
+    background: rgba(255,68,68,0.1);
+    border: 1px solid rgba(255,68,68,0.3);
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 11px;
+    color: #ff6666;
+  }
+  
+  .cle5-badge {
+    background: linear-gradient(135deg, #1a237e, #311b92);
+    border: none;
+    color: #bbdefb;
+  }
+  
+  .section {
+    background: #111;
+    border-radius: 8px;
+    border: 1px solid #222;
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+  
+  .section-title {
+    background: #1a1a1a;
+    padding: 12px 20px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #666;
+    border-bottom: 1px solid #222;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .page-badge {
+    font-size: 11px;
+    color: #444;
+    font-weight: 400;
+  }
+  
+  .panels-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1px;
+    background: #1a1a1a;
+    padding: 1px;
+  }
+  
+  .panel {
+    background: #0d0d0d;
+    padding: 16px;
+    position: relative;
+  }
+  
+  .panel.full-page {
+    grid-column: 1 / -1;
+  }
+  
+  .panel img {
+    width: 100%;
+    border-radius: 4px;
+    margin-bottom: 12px;
+    border: 1px solid #222;
+  }
+  
+  .panel-no-image {
+    width: 100%;
+    height: 200px;
+    background: #111;
+    border: 1px dashed #222;
+    border-radius: 4px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #333;
+    font-size: 12px;
+  }
+  
+  .beat-label {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 3px 8px;
+    border-radius: 3px;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  
+  .beat-cold-open { background: #4a148c; color: #fff; }
+  .beat-theme { background: #1565c0; color: #fff; }
+  .beat-catalyst { background: #e65100; color: #fff; }
+  .beat-midpoint { background: #2e7d32; color: #fff; }
+  .beat-all-lost { background: #b71c1c; color: #fff; }
+  .beat-climax { background: #b71c1c; color: #FFD700; }
+  .beat-silence { background: #263238; color: #90a4ae; }
+  
+  .visual-desc {
+    font-size: 12px;
+    color: #aaa;
+    margin-bottom: 8px;
+    line-height: 1.5;
+    font-style: italic;
+  }
+  
+  .dialogue-box {
+    background: rgba(255,255,255,0.03);
+    border-left: 3px solid #444;
+    padding: 8px 12px;
+    margin: 6px 0;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  
+  .dialogue-box.zhuxi { border-color: #B22222; }
+  .dialogue-box.wangmiao { border-color: #4FC3F7; }
+  .dialogue-box.shichin { border-color: #FFB74D; }
+  .dialogue-box.narration { border-color: #555; color: #777; font-size: 11px; }
+  
+  .speaker {
+    font-weight: 800;
+    font-size: 10px;
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 2px;
+  }
+  
+  .speaker.wangmiao { color: #4FC3F7; }
+  .speaker.shichin { color: #FFB74D; }
+  
+  .cle5-check {
+    background: rgba(26,35,126,0.15);
+    border: 1px solid rgba(26,35,126,0.3);
+    border-radius: 4px;
+    padding: 8px;
+    margin-top: 8px;
+    font-size: 11px;
+    color: #90a4ae;
+  }
+  
+  .cle5-check strong { color: #bbdefb; }
+  
+  .footer {
+    background: #0d0d0d;
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid #1a1a1a;
+    margin-top: 20px;
+  }
+  
+  .footer h2 {
+    font-size: 16px;
+    color: #666;
+    margin-bottom: 12px;
+  }
+  
+  .footer p { font-size: 12px; color: #555; line-height: 1.6; }
+  
+  .score-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-top: 12px;
+  }
+  
+  .score-card {
+    background: #111;
+    border: 1px solid #222;
+    border-radius: 4px;
+    padding: 12px;
+    text-align: center;
+  }
+  
+  .score-card .label { font-size: 10px; color: #444; text-transform: uppercase; }
+  .score-card .value { font-size: 24px; font-weight: 800; margin-top: 4px; }
+  .score-card .value.green { color: #4caf50; }
+  .score-card .value.amber { color: #ff9800; }
+  .score-card .value.red { color: #f44336; }
+  
+  @media (max-width: 768px) {
+    .header h1 { font-size: 22px; }
+    .panels-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="storyboard">
+
+<div class="header">
+  <h1>EP002 — 카운트다운</h1>
+  <div class="subtitle">삼체 만화 × CLE5 Creative Loop · 라이카 단독 전 역할 수행 · 2026-08-04</div>
+  <div class="tags">
+    <span class="tag">주 가설: H1 클리프행거</span>
+    <span class="tag">부 가설: H5 시각 압도 vs 여백</span>
+    <span class="tag cle5-badge">CLE5 Phase: Create → Assess → Iterate</span>
+    <span class="tag cle5-badge">PRN-003 여백성공 활성</span>
+  </div>
+</div>
+
+<!-- p1 -->
+<div class="section">
+  <div class="section-title">p1 — 직행: 주저 <span class="page-badge">3패널 · 풀페이지</span></div>
+  <div class="panels-grid">
+    <div class="panel">
+      <div class="beat-label beat-cold-open">Cold Open · 직행</div>
+      <div class="panel-no-image">p1-1 모니터 클로즈업 (미생성)</div>
+      <div class="visual-desc">EP001 p16과 동일 프레임: "Three Body — 게임을 시작하시겠습니까?" 차가운 청색 화면.</div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-cold-open">후퇴</div>
+      <div class="panel-no-image">p1-2 왕먀오 뒷모습 (미생성)</div>
+      <div class="visual-desc">어둠 속 모니터 앞 실루엣. 굳은 어깨.</div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-cold-open">긴장</div>
+      <img src="images/p1-3_hand_mouse.jpg" alt="마우스 위 손">
+      <div class="visual-desc">마우스 위 손가락. 떨림. 땀방울. 모든 긴장이 손가락 하나에.</div>
+      <div class="cle5-check"><strong>PRN-002:</strong> 감정을 직접 그리지 않고 흔적(땀, 떨림)을 그림 (데즈카 원칙)</div>
+    </div>
+  </div>
+</div>
+
+<!-- p2 -->
+<div class="section">
+  <div class="section-title">p2 — 정밀한 세계 <span class="page-badge">3패널</span></div>
+  <div class="panels-grid">
+    <div class="panel">
+      <div class="beat-label beat-theme">Theme Stated</div>
+      <div class="panel-no-image">p2-1 연구실 전경 (미생성)</div>
+      <div class="visual-desc">정돈된 나노 연구실. 따뜻한 백색. 질서가 있다.</div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-theme">자신감</div>
+      <div class="panel-no-image">p2-2 왕먀오 미소 (미생성)</div>
+      <div class="dialogue-box wangmiao">
+        <span class="speaker wangmiao">왕먀오</span>
+        "물리학은 정밀한 학문이야. 오차는 있어도 거짓은 없지."
+      </div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-theme">첫 번호</div>
+      <img src="images/p2-3_first_flash.jpg" alt="모니터 구석 숫자">
+      <div class="visual-desc">모니터 구석에 1초간 깜빡이는 1199:59:59. 독자만 본다.</div>
+      <div class="cle5-check"><strong>PRN-001:</strong> 숫자는 작고 붉다 — 패널 유일의 붉은 원소. 미묘함이 곧 소름</div>
+    </div>
+  </div>
+</div>
+
+<!-- p3 -->
+<div class="section">
+  <div class="section-title">p3 — 첫 이상 징후 <span class="page-badge">3패널</span></div>
+  <div class="panels-grid">
+    <div class="panel">
+      <div class="beat-label beat-theme">부정</div>
+      <div class="panel-no-image">p3-1 눈 비비며 (미생성)</div>
+      <div class="dialogue-box wangmiao">
+        <span class="speaker wangmiao">왕먀오 (독백)</span>
+        "...피곤하군."
+      </div>
+      <div class="visual-desc">부정의 시작 — "안 보았다".</div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-theme">잠시 안도</div>
+      <div class="panel-no-image">p3-2 창밖 (미생성)</div>
+      <div class="visual-desc">정상적 풍경. 그러나 독자는 안다.</div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-theme">전환</div>
+      <div class="panel-no-image">p3-3 현상소 (미생성)</div>
+      <div class="visual-desc">"사진 현상. 1시간 가능." 다음 장소로.</div>
+    </div>
+  </div>
+</div>
+
+<!-- p4 -->
+<div class="section">
+  <div class="section-title">p4 — 필름의 증언 ★ 풀페이지 <span class="page-badge">3패널 · 핵심</span></div>
+  <div class="panels-grid">
+    <div class="panel">
+      <div class="beat-label beat-catalyst">Catalyst · 암실</div>
+      <div class="panel-no-image">p4-1 붉은 안전등 (미생성)</div>
+      <div class="visual-desc">현상액에서 인화지를 꺼내는 왕먀오. 붉은 조명.</div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-catalyst">★★★ 핵심 컷</div>
+      <img src="images/p4-2_film_countdown.jpg" alt="필름에 찍힌 카운트다운">
+      <div class="visual-desc">세 프레임 모두에 카운트다운. 아날로그 필름 위에 디지털 숫자. 매체의 모순.</div>
+      <div class="dialogue-box narration">
+        현상소 주인: "이거 인화할 때 나오는 건가요?"
+      </div>
+      <div class="cle5-check">
+        <strong>PRN-001 감각부재 해결:</strong> 아날로그에 디지털이 찍혔다는 모순 자체가 감각적 충격<br>
+        <strong>PRN-002 설명과잉 없음:</strong> 숫자가 존재함. 해석은 독자의 몫<br>
+        <strong>CASE-EP002-002:</strong> 매체의 모순 = 패러다임 붕괴
+      </div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-catalyst">붕괴</div>
+      <img src="images/p4-3_horror_face.jpg" alt="왕먀오 경악">
+      <div class="visual-desc">과학자의 무너지는 얼굴. 안경 렌즈에 숫자가 반사.</div>
+      <div class="dialogue-box wangmiao">
+        <span class="speaker wangmiao">왕먀오</span>
+        "...필름은 디지털이 아닌데."
+      </div>
+      <div class="cle5-check"><strong>Subtext 83.3%:</strong> 기술적 관찱 → "이건 내 눈의 문제가 아니다"</div>
+    </div>
+  </div>
+</div>
+
+<!-- p5 -->
+<div class="section">
+  <div class="section-title">p5 — 형사의 직감 <span class="page-badge">4패널</span></div>
+  <div class="panels-grid">
+    <div class="panel">
+      <div class="beat-label beat-theme">수사</div>
+      <div class="panel-no-image">p5-1 경찰서 (미생성)</div>
+      <div class="visual-desc">스치친과 왕먀오. 회색 형광등. 차가운 공간.</div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-theme">경고</div>
+      <div class="panel-no-image">p5-2 사진 (미생성)</div>
+      <div class="dialogue-box shichin">
+        <span class="speaker shichin">스치친</span>
+        "죽기 전 2주간 밤하늘만 봤어. 연구를 포기했지."
+      </div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-theme">공포</div>
+      <div class="panel-no-image">p5-3 왕먀오 표정 (미생성)</div>
+      <div class="visual-desc">"나와 같은 패턴" — 공포의 시작.</div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-theme">직감</div>
+      <div class="panel-no-image">p5-4 스치친 눈 (미생성)</div>
+      <div class="dialogue-box shichin">
+        <span class="speaker shichin">스치친</span>
+        "이상한 건 안 보이나?"
+      </div>
+      <div class="cle5-check"><strong>Subtext:</strong> "네가 다음 대상이다"</div>
+    </div>
+  </div>
+</div>
+
+<!-- p6 -->
+<div class="section">
+  <div class="section-title">p6 — 숫자 없는 세계 ★ 침묵 페이지 <span class="page-badge">풀페이지</span></div>
+  <div class="panels-grid">
+    <div class="panel full-page">
+      <div class="beat-label beat-silence">Silence · 구조적 여백 #1</div>
+      <img src="images/p6-1_family_warmth.jpg" alt="가족 일상 — 따뜻한 여백">
+      <div class="visual-desc">대사 없는 전체 페이지. 가장 따뜻한 페이지. 이 뒤에 올 공포와의 대비. 아이가 블록 놀이를 하고 아내가 요리한다. 왕먀오가 소파에서 미소 짓는다 — 그러나 눈에 그림자.</div>
+      <div class="cle5-check">
+        <strong>PRN-003 여백성공 ★★★:</strong> 이 페이지가 EP002의 정서적 존재 이유.<br>
+        p4의 공포와 p11의 절정 사이에 위치한 "숨 쉴 곳"<br>
+        대사 없음 → 침묵이 곧 의미<br>
+        김환기: "눈을 감으면 환히 보이는" — 독자가 나중에 이 페이지를 떠올릴 때 더 아름답다
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- p7 -->
+<div class="section">
+  <div class="section-title">p7 — 반복 <span class="page-badge">3패널</span></div>
+  <div class="panels-grid">
+    <div class="panel">
+      <div class="beat-label beat-theme">통제 시도</div>
+      <div class="panel-no-image">p7-1 새 카메라 (미생성)</div>
+      <div class="visual-desc">다른 브랜드, 다른 렌즈. 기기를 바꾸면 결과가 바뀔까.</div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-theme">강박</div>
+      <div class="panel-no-image">p7-2 반복 촬영/현상 (미생성)</div>
+      <div class="dialogue-box wangmiao">
+        <span class="speaker wangmiao">왕먀오 (독백)</span>
+        "카메라를 바꿔도. 렌즈를 바꿔도."
+      </div>
+      <div class="visual-desc">같은 행동, 같은 결과. 강박의 시각화.</div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-theme">불가</div>
+      <div class="panel-no-image">p7-3 통제 불가 (미생성)</div>
+      <div class="visual-desc">카메라를 내려놓는 손. 통제 불가의 인식.</div>
+    </div>
+  </div>
+</div>
+
+<!-- p8 -->
+<div class="section">
+  <div class="section-title">p8 — 정상 <span class="page-badge">3패널</span></div>
+  <div class="panels-grid">
+    <div class="panel">
+      <div class="beat-label beat-theme">안과</div>
+      <div class="panel-no-image">p8-1 안과 검사 (미생성)</div>
+      <div class="dialogue-box narration">의사: "눈은 아주 건강하십니다."</div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-theme">신경과</div>
+      <div class="panel-no-image">p8-2 뇌파 MRI (미생성)</div>
+      <div class="dialogue-box narration">의사: "신경계도 이상이 없어요. 스트레스성 환각일 수 있습니다."</div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-theme">숨겨진 공포</div>
+      <div class="panel-no-image">p8-3 안경 렌즈 반사 (미생성)</div>
+      <div class="dialogue-box wangmiao">
+        <span class="speaker wangmiao">왕먀오 (독백)</span>
+        "...스트레스."
+      </div>
+      <div class="cle5-check"><strong>Pope in the Pool:</strong> 안경 렌즈에 미세한 숫자. 왕먀오는 못 본다 — 독자만 본다</div>
+    </div>
+  </div>
+</div>
+
+<!-- p9 -->
+<div class="section">
+  <div class="section-title">p9 — 도망치지 마 ★ Midpoint <span class="page-badge">4패널</span></div>
+  <div class="panels-grid">
+    <div class="panel">
+      <div class="beat-label beat-midpoint">밀착 대화</div>
+      <div class="panel-no-image">p9-1 차 안 (미생성)</div>
+      <div class="visual-desc">비 오는 밤, 스치친의 차. 와이퍼 리듬. 가로등 스침.</div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-midpoint">정보</div>
+      <div class="panel-no-image">p9-2 담배 (미생성)</div>
+      <div class="dialogue-box shichin">
+        <span class="speaker shichin">스치친</span>
+        "죽은 세 명도 다 정상이었어."
+      </div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-midpoint">★★ Midpoint</div>
+      <img src="images/p9-3_shi_qiang_midpoint.jpg" alt="스치친 — 거리감 해체">
+      <div class="dialogue-box shichin">
+        <span class="speaker shichin">스치친</span>
+        "도망치지 마. 죽은 놈들은 도망쳤어. 살아남으려면 정면으로 봐."
+      </div>
+      <div class="cle5-check"><strong>Midpoint:</strong> 업무적 거리감이 무너지는 순간. 담배 연기 = 거리감 해체의 시각 신호</div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-midpoint">동행</div>
+      <div class="panel-no-image">p9-4 왕먀오 결의 (미생성)</div>
+      <div class="visual-desc">관계 전환 — 고독에서 동행으로. 입술 깨물기.</div>
+    </div>
+  </div>
+</div>
+
+<!-- p10 -->
+<div class="section">
+  <div class="section-title">p10 — 가속 <span class="page-badge">3패널</span></div>
+  <div class="panels-grid">
+    <div class="panel">
+      <div class="beat-label beat-all-lost">시간 왜곡</div>
+      <div class="panel-no-image">p10-1 새벽 연구실 (미생성)</div>
+      <div class="dialogue-box wangmiao">
+        <span class="speaker wangmiao">왕먀오 (독백)</span>
+        "빨라지고 있다."
+      </div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-all-lost">체감 붕괴</div>
+      <div class="panel-no-image">p10-2 시계-모니터 (미생성)</div>
+      <div class="visual-desc">3초 = 3초인지 확신할 수 없음.</div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-all-lost">현실 왜곡 ★</div>
+      <div class="panel-no-image">p10-3 프레임 비틀림 (미생성)</div>
+      <div class="visual-desc">패널 프레임 자체가 비틀림. "프레임 = 현실" — 현실 자체가 휘어진다.</div>
+      <div class="cle5-check"><strong>기교 판정:</strong> 의도적 메타포 — 기교 노출이 아닌 구조적 붕괴의 시각화</div>
+    </div>
+  </div>
+</div>
+
+<!-- p11 -->
+<div class="section">
+  <div class="section-title">p11 — 거리의 카운트다운 ★★★ All Is Lost <span class="page-badge">풀페이지</span></div>
+  <div class="panels-grid">
+    <div class="panel full-page">
+      <div class="beat-label beat-all-lost">All Is Lost · 시각적 절정</div>
+      <img src="images/p11-1_street_countdown.jpg" alt="거리의 카운트다운 — 모든 반사면에 숫자">
+      <div class="visual-desc">밤거리. 모든 반사면에 같은 숫자: 1175:23:01. 쇼윈도, 자동차 유리, 가로등 크롬, 웅덩이, 스마트폰. 왕먀오의 실루엣이 중앙에 작게. 세계 전체가 카운트다운으로 뒤덮임.</div>
+      <div class="dialogue-box wangmiao">
+        <span class="speaker wangmiao">왕먀오 (독백)</span>
+        "...어디에나 있다."
+      </div>
+      <div class="cle5-check">
+        <strong>H5 시각 압도 vs 여백 가설 실험군 ★★★</strong><br>
+        PRN-001: 감각 = 압도, 밀도, 어디에나 있음<br>
+        PRN-002: 대사 최소 ("...어디에나 있다")<br>
+        PRN-003: p12와의 대비가 핵심 — 이 페이지가 가득찰수록 p12의 여백이 아프다
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- p12 -->
+<div class="section">
+  <div class="section-title">p12 — 밤의 독백 ★ 침묵 페이지 <span class="page-badge">풀페이지</span></div>
+  <div class="panels-grid">
+    <div class="panel full-page">
+      <div class="beat-label beat-silence">Silence · 구조적 여백 #2</div>
+      <img src="images/p12-1_bedroom.jpg" alt="침실 — 천장에 떠 있는 숫자">
+      <div class="visual-desc">어둠. 셩화가 잠들어 있다. 왕먀오가 천장을 본다 — 희미하게 1170:XX:XX가 안개처럼. 아내의 손을 잡는다. 따뜻한 손. 가장 사적인 공간마저 오염. p6과 대비.</div>
+      <div class="cle5-check">
+        <strong>PRN-003 여백성공 ★★★</strong> — p6과 쌍을 이루는 구조적 여백<br>
+        p6: "숫자 없는 세계" (낮, 가족, 따뜻함) → p12: "숫자가 침투한 세계" (밤, 침실, 차가움)<br>
+        유일한 따뜻함 = 아내의 손 → 그리움의 대상이 시각화됨<br>
+        김환기: "눈을 감으면 환히 보이는" → 왕먀오가 감아야 할 것은 눈이 아니라 세계<br>
+        <strong>CASE-EP002-001:</strong> 숫자의 부재가 가장 큰 숫자
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- p13 -->
+<div class="section">
+  <div class="section-title">p13 — 초대 <span class="page-badge">3패널</span></div>
+  <div class="panels-grid">
+    <div class="panel">
+      <div class="beat-label beat-climax">소포</div>
+      <div class="panel-no-image">p13-1 소포 개봉 (미생성)</div>
+      <div class="visual-desc">연구실. 정체불명 소포. 발신자 불명.</div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-climax">V-장비</div>
+      <div class="panel-no-image">p13-2 VR 헬멧 (미생성)</div>
+      <div class="dialogue-box wangmiao">
+        <span class="speaker wangmiao">왕먀오 (독백)</span>
+        "이건... 게임 기기?"
+      </div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-climax">무게</div>
+      <div class="panel-no-image">p13-3 장비를 든 손 (미생성)</div>
+      <div class="visual-desc">무겁다. 결정의 무게가 손에.</div>
+    </div>
+  </div>
+</div>
+
+<!-- p14 -->
+<div class="section">
+  <div class="section-title">p14 — 마지막 대화 <span class="page-badge">4패널</span></div>
+  <div class="panels-grid">
+    <div class="panel">
+      <div class="beat-label beat-climax">전화</div>
+      <div class="panel-no-image">p14-1 핸드폰 (미생성)</div>
+      <div class="dialogue-box wangmiao">
+        <span class="speaker wangmiao">왕먀오</span>
+        "장비가 왔습니다. VR 헬멧이요."
+      </div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-climax">정보</div>
+      <div class="panel-no-image">p14-2 스치친 차 (미생성)</div>
+      <div class="dialogue-box shichin">
+        <span class="speaker shichin">스치친</span>
+        "죽은 세 명도 가지고 있었어. 전부."
+      </div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-climax">관계 완성</div>
+      <div class="panel-no-image">p14-3 스치친 진심 (미생성)</div>
+      <div class="dialogue-box shichin">
+        <span class="speaker shichin">스치친</span>
+        "들어가. 게임에 들어가. 끝까지 해봐."
+      </div>
+      <div class="cle5-check"><strong>관계 완성:</strong> 거리감 해소 — 그리움이 채워지는 순간</div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-climax">선택</div>
+      <div class="panel-no-image">p14-4 왕먀오 결의 (미생성)</div>
+      <div class="dialogue-box wangmiao">
+        <span class="speaker wangmiao">왕먀오</span>
+        "...알겠습니다."
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- p15 -->
+<div class="section">
+  <div class="section-title">p15 — 입장 준비 <span class="page-badge">4패널</span></div>
+  <div class="panels-grid">
+    <div class="panel">
+      <div class="beat-label beat-climax">단절</div>
+      <div class="panel-no-image">p15-1 헬멧 착용 (미생성)</div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-climax">대기</div>
+      <div class="panel-no-image">p15-2 접속 중 (미생성)</div>
+      <div class="visual-desc">"접속 중..." 대기의 긴장.</div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-climax">★ 핵심 순간</div>
+      <img src="images/p15-3_numbers_gone.jpg" alt="숫자가 사라진다">
+      <div class="visual-desc">처음으로 숫자가 없다. 공포의 소멸. 역설: 더 큰 공포.</div>
+      <div class="dialogue-box wangmiao">
+        <span class="speaker wangmiao">왕먀오 (독백, 작은 글씨)</span>
+        "숫자가... 없다."
+      </div>
+      <div class="cle5-check">
+        <strong>PRN-003 여백성공 ★★★ — 숫자의 부재가 가장 큰 숫자</strong><br>
+        14페이지 동안 숫자가 증가하다가 갑자기 사라짐<br>
+        이 "빈 공간"이 가장 큰 소리를 냄<br>
+        역설: 공포의 소멸 = 더 큰 공포 (왜 사라졌는가?)
+      </div>
+    </div>
+    <div class="panel">
+      <div class="beat-label beat-climax">정적</div>
+      <div class="panel-no-image">p15-4 완전한 어둠 (미생성)</div>
+      <div class="visual-desc">완전한 흑. 정적. 독자도 숨을 죽임.</div>
+    </div>
+  </div>
+</div>
+
+<!-- p16 -->
+<div class="section">
+  <div class="section-title">p16 — 삼체 세계 ★★★ 클리프행거 <span class="page-badge">풀페이지</span></div>
+  <div class="panels-grid">
+    <div class="panel full-page">
+      <div class="beat-label beat-climax">Final Image · 클리프행거</div>
+      <img src="images/p16-1_three_body_world.jpg" alt="삼체 세계 — 세 개의 태양">
+      <div class="visual-desc">광활한 사막. 모래가 바람에 날린다. 하늘에 태양이 세 개. 세 방향의 그림자. EP001 p1의 아이 그림이 현실이 됨.</div>
+      <div class="dialogue-box narration">
+        하단: "삼체 문제의 세계에 오신 것을 환영합니다." / "문명 137호. 기원: 1789."
+      </div>
+      <div class="cle5-check">
+        <strong>H1 클리프행거 가설 ★</strong> — EP001 p1 회수 + EP003 브릿지<br>
+        PRN-001: 감각 = 압도적 스케일, 세 방향 그림자<br>
+        PRN-002: 설명 없음 — 세계가 스스로 존재함<br>
+        PRN-003: 왕먀오가 극도로 작음 = 인간의 작음 vs 우주의 광대함
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CLE5 Self-Assessment -->
+<div class="footer">
+  <h2>CLE5 자기평가 — Creative Loop #1</h2>
+  
+  <div class="score-grid">
+    <div class="score-card">
+      <div class="label">감각부재 (PRN-001)</div>
+      <div class="value green">안전</div>
+    </div>
+    <div class="score-card">
+      <div class="label">기교노출 (PRN-002)</div>
+      <div class="value green">안전</div>
+    </div>
+    <div class="score-card">
+      <div class="label">설명과잉</div>
+      <div class="value green">0건</div>
+    </div>
+    <div class="score-card">
+      <div class="label">여백성공 (PRN-003)</div>
+      <div class="value green">3곳</div>
+    </div>
+    <div class="score-card">
+      <div class="label">Subtext 비율</div>
+      <div class="value green">83.3%</div>
+    </div>
+    <div class="score-card">
+      <div class="label">무심함 점수</div>
+      <div class="value amber">78/100</div>
+    </div>
+  </div>
+  
+  <p style="margin-top:16px;">
+    <strong>Feedback Tags 적용:</strong> 감각부재(PRN-001) 위험 패널 p8-2 → p8-3 안경 반사로 보완 완료.
+    기교노출(PRN-002) 위험 p10-3 → 의도적 메타포로 판정, 절제 유지.
+    여백성공(PRN-003) 핵심 3곳: p6(가족), p12(침실), p15-3(숫자 소멸).
+  </p>
+  
+  <p style="margin-top:8px;">
+    <strong>CASE 기록:</strong><br>
+    CASE-EP002-001: "숫자의 부재가 가장 큰 숫자" — p15-3에서 카운트다운이 사라지는 것이 14페이지의 증식보다 더 큰 충격.<br>
+    CASE-EP002-002: "매체의 모순 = 패러다임 붕괴" — p4의 아날로그 필름에 찍힌 디지털 숫자.
+  </p>
+  
+  <p style="margin-top:8px;">
+    <strong>역할 수행:</strong> 작가(대본 검토) · 아트디렉터(57패널 프롬프트) · 이미지 생성(10 핵심 패널) · 비평가(CLE5 자기평가) · 에디터(HTML 패키징)<br>
+    <strong>생성 도구:</strong> Pollinations AI (Seedream 기반) · CLE5 Feedback Loop<br>
+    <strong>실행자:</strong> 라이카 🐕
+  </p>
+</div>
+
+</div>
+
+</body>
+</html>
