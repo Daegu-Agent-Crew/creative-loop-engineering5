@@ -6,11 +6,27 @@ import {
   resolveWriteSha,
   validateWorkspace
 } from "./github-sync.js";
+import {
+  activeComicEpisode,
+  activeComicProject,
+  addComicArtifact,
+  approvePanelMemory,
+  comicHandoffPacket,
+  comicPublishReadiness,
+  comicStageLabels,
+  comicStages,
+  createComicEpisode,
+  createComicProject,
+  ensureComicWorkspace,
+  selectPanelCandidate,
+  setComicStage,
+  updatePanelQa
+} from "./comic-core.js";
 
 const STORAGE_KEY = "cle5-workspace-v2";
 const GITHUB_SETTINGS_KEY = "cle5-github-settings-v1";
 const GITHUB_SYNC_META_KEY = "cle5-github-sync-meta-v1";
-const routes = new Set(["workspace", "history", "memory", "settings", "agent"]);
+const routes = new Set(["comic", "workspace", "history", "memory", "settings", "agent", "reader"]);
 const app = document.querySelector("#app");
 const toast = document.querySelector("#toast");
 const sidebar = document.querySelector(".sidebar");
@@ -24,8 +40,9 @@ const stageLabels = {
   learned: "학습 완료"
 };
 
-let store = loadStore();
+let store = ensureComicWorkspace(loadStore());
 let workspaceMode = "original";
+let comicViewStage = activeComicEpisode(store)?.stage || "structure";
 let selectedWorkId = store.activeWorkId;
 let pendingImport = null;
 let githubSettings = loadGitHubSettings();
@@ -39,8 +56,8 @@ let githubStatus = {
 let githubBusy = false;
 
 function initialStore() {
-  return {
-    version: 2,
+  return ensureComicWorkspace({
+    version: 3,
     activeWorkId: "WORK-001",
     works: [
       {
@@ -72,7 +89,7 @@ function initialStore() {
         createdAt: "2026-08-03T00:00:00Z"
       }
     ]
-  };
+  });
 }
 
 function loadStore() {
@@ -137,12 +154,23 @@ function currentWork() {
 }
 
 function currentRoute() {
-  const hash = location.hash.replace("#", "") || "workspace";
-  const route = hash.startsWith("agent/") ? "agent" : hash;
+  const hash = location.hash.replace("#", "") || "comic";
+  const route = hash.startsWith("agent/") ? "agent" : hash.startsWith("reader/") ? "reader" : hash;
   return routes.has(route) ? route : "workspace";
 }
 
 function updateSidebarStatus() {
+  if (currentRoute() === "comic" || currentRoute() === "reader") {
+    const project = activeComicProject(store);
+    const episode = activeComicEpisode(store);
+    document.querySelector("#current-work-label").textContent = project?.title ?? "만화 프로젝트 없음";
+    document.querySelector("#current-stage-label").textContent = episode
+      ? `${episode.id} · ${comicStageLabels[episode.stage]}`
+      : "에피소드 필요";
+    document.querySelector("#memory-count-label").textContent =
+      `${store.memory.filter((item) => item.status === "active" && item.scope?.type === "comic-panel").length}개의 패널 기억`;
+    return;
+  }
   const work = currentWork();
   document.querySelector("#current-work-label").textContent =
     work?.title ?? "작업 없음";
@@ -400,6 +428,10 @@ function agentView() {
       <div class="page-body"><div class="empty-state"><a class="button primary" href="#workspace">Workspace로 돌아가기</a></div></div>`;
   }
 
+  if (packet.protocol === "CLE5_COMIC_AGENT_HANDOFF_V1") {
+    return comicAgentView(packet);
+  }
+
   const feedback = packet.work.feedback ?? [];
   return `
     ${pageHeader(
@@ -639,7 +671,308 @@ function memoryView() {
           <div><dt>저장 위치</dt><dd>이 브라우저</dd></div>
         </dl>
       </aside>
+  </div>`;
+}
+
+function comicStageDescription(stage) {
+  return {
+    structure: "스토리·캐릭터·콘티",
+    production: "이미지 산출물·패널",
+    review: "후보 선택·패널 QA",
+    publish: "발행 게이트·세로 뷰어"
+  }[stage];
+}
+
+function comicStageRail(episode) {
+  const activeIndex = comicStages.indexOf(episode.stage);
+  return `<ol class="stage-rail comic-stage-rail" aria-label="만화 제작 단계">
+    ${comicStages.map((stage, index) => `
+      <li class="${index < activeIndex ? "done" : ""} ${stage === comicViewStage ? "active" : ""}">
+        <button class="stage-link" data-action="view-comic-stage" data-stage="${stage}">
+          <span class="stage-marker">${index < activeIndex ? "✓" : index + 1}</span>
+          <span><strong>${comicStageLabels[stage]}</strong><small>${comicStageDescription(stage)}</small></span>
+        </button>
+      </li>`).join("")}
+  </ol>`;
+}
+
+function comicNextAction(episode) {
+  const readiness = comicPublishReadiness(episode);
+  if (episode.stage === "structure") return { title: "구성을 완성하세요", detail: "스토리, 캐릭터와 첫 콘티를 준비합니다.", action: "advance-comic-stage", label: "제작 단계로" };
+  if (episode.stage === "production") return { title: "패널 산출물을 등록하세요", detail: "AI 에이전트에게 이미지를 맡기거나 결과 URL을 등록합니다.", action: "open-comic-handoff", label: "AI 에이전트에게 맡기기" };
+  if (episode.stage === "review") {
+    const waiting = episode.panels.filter((panel) => !panel.review).length;
+    return waiting
+      ? { title: `후보 선택 ${waiting}건 남음`, detail: "승인한 후보와 선택 근거만 다음 작업에 기억됩니다.", action: "focus-comic-review", label: "후보 검토" }
+      : { title: "패널 QA를 완료하세요", detail: readiness.issues.join(" · ") || "모든 검수를 통과했습니다.", action: "advance-comic-stage", label: "발행 확인" };
+  }
+  return readiness.ready
+    ? { title: "발행 준비 완료", detail: "최종 세로 만화를 확인합니다.", action: "publish-comic", label: "에피소드 발행" }
+    : { title: "발행 전 확인 필요", detail: readiness.issues.join(" · "), action: "view-comic-stage", label: "검토로 돌아가기", stage: "review" };
+}
+
+function comicView() {
+  const project = activeComicProject(store);
+  const episode = activeComicEpisode(store);
+  if (!project || !episode) {
+    return `${pageHeader("Comic Workspace", "CLE5 안에서 연재 만화를 구성하고 제작합니다.", '<button class="button primary" data-action="new-comic-project">새 만화 프로젝트</button>')}
+      <div class="page-body"><div class="empty-state"><h2>첫 만화 프로젝트를 시작하세요</h2><p>제목과 창작 목적만 있으면 됩니다.</p><button class="button primary" data-action="new-comic-project">새 만화 프로젝트</button></div></div>`;
+  }
+  const next = comicNextAction(episode);
+  const selectedCount = episode.panels.filter((panel) => panel.review?.humanApproved).length;
+  const approvedCount = episode.panels.filter((panel) => panel.status === "approved").length;
+  return `
+    ${pageHeader(
+      `${project.title} · ${episode.title}`,
+      "현재 단계와 다음 결정에 집중하고, 제작 데이터는 CLE5가 내부에서 관리합니다.",
+      '<span class="save-state">이 브라우저에 자동 저장</span><button class="button" data-action="open-comic-result">AI 결과 붙여넣기</button><button class="button primary" data-action="open-comic-handoff">AI 에이전트에게 맡기기</button><button class="button" data-action="new-comic-episode">새 에피소드</button>'
+    )}
+    <div class="comic-shell">
+      <aside class="comic-sidebar">
+        <div class="section-label">에피소드</div>
+        <select id="comic-project-select" aria-label="만화 프로젝트">
+          ${store.comicProjects.map((item) => `<option value="${item.id}" ${item.id === project.id ? "selected" : ""}>${escapeHtml(item.title)}</option>`).join("")}
+        </select>
+        <div class="episode-switcher">
+          ${project.episodes.map((item) => `<button class="episode-chip ${item.id === episode.id ? "active" : ""}" data-action="select-comic-episode" data-episode-id="${item.id}"><strong>${escapeHtml(item.id)}</strong><span>${escapeHtml(item.title)}</span></button>`).join("")}
+        </div>
+        <div class="section-label stage-label">진행 단계</div>
+        ${comicStageRail(episode)}
+      </aside>
+      <main class="comic-main">
+        <section class="next-action-band">
+          <div><span class="section-label">Next action</span><h2>${escapeHtml(next.title)}</h2><p>${escapeHtml(next.detail)}</p></div>
+          <button class="button primary" data-action="${next.action}" ${next.stage ? `data-stage="${next.stage}"` : ""}>${escapeHtml(next.label)}</button>
+        </section>
+        <div class="comic-stats">
+          <div><strong>${episode.storyboard.length}</strong><span>콘티</span></div>
+          <div><strong>${episode.panels.length}</strong><span>패널</span></div>
+          <div><strong>${selectedCount}</strong><span>선택</span></div>
+          <div><strong>${approvedCount}</strong><span>QA 승인</span></div>
+        </div>
+        ${comicStageContent(project, episode)}
+      </main>
     </div>`;
+}
+
+function comicStageContent(project, episode) {
+  if (comicViewStage === "structure") return comicStructureStage(episode);
+  if (comicViewStage === "production") return comicProductionStage(episode);
+  if (comicViewStage === "review") return comicReviewStage(project, episode);
+  return comicPublishStage(project, episode);
+}
+
+function comicStructureStage(episode) {
+  return `<section class="comic-stage-content">
+    <div class="stage-heading"><div><span class="section-label">01 · Structure</span><h2>에피소드 구성</h2></div><button class="button" data-action="open-comic-artifact">산출물 등록</button></div>
+    <div class="comic-form-grid">
+      <label>에피소드 제목<input id="comic-episode-title" value="${escapeHtml(episode.title)}"></label>
+      <label>한 줄 이야기<input id="comic-episode-logline" value="${escapeHtml(episode.logline)}"></label>
+      <label class="full">스토리<textarea id="comic-episode-story" rows="8">${escapeHtml(episode.story)}</textarea></label>
+    </div>
+    <div class="artifact-section">
+      <div class="section-head"><div><span class="section-label">Characters</span><h3>캐릭터</h3></div><span>${episode.characters.length}</span></div>
+      <div class="character-strip">
+        ${episode.characters.length ? episode.characters.map((character) => `<article class="character-tile">
+          ${character.imageUrl ? `<img src="${escapeHtml(character.imageUrl)}" alt="${escapeHtml(character.name)} 캐릭터 시트">` : '<div class="asset-placeholder">이미지 없음</div>'}
+          <div><strong>${escapeHtml(character.name)}</strong><small>${escapeHtml(character.role)}</small><p>${escapeHtml(character.description)}</p></div>
+        </article>`).join("") : '<div class="quiet-empty">등록된 캐릭터가 없습니다.</div>'}
+      </div>
+    </div>
+    <div class="artifact-section">
+      <div class="section-head"><div><span class="section-label">Storyboard</span><h3>콘티</h3></div><span>${episode.storyboard.length}</span></div>
+      <div class="storyboard-list">
+        ${episode.storyboard.length ? episode.storyboard.map((shot) => `<article><span>${String(shot.order).padStart(2, "0")}</span><div><strong>${escapeHtml(shot.description)}</strong><small>${escapeHtml(shot.camera)} · ${shot.characters.length}명</small></div></article>`).join("") : '<div class="quiet-empty">Agent Handoff 또는 산출물 등록으로 첫 콘티를 추가하세요.</div>'}
+      </div>
+    </div>
+  </section>`;
+}
+
+function comicProductionStage(episode) {
+  return `<section class="comic-stage-content">
+    <div class="stage-heading"><div><span class="section-label">02 · Production</span><h2>패널 제작</h2></div><div class="actions"><button class="button" data-action="open-comic-artifact">산출물 등록</button><button class="button primary" data-action="open-comic-handoff">이미지 생성 맡기기</button></div></div>
+    <div class="production-reference-strip">
+      ${episode.characters.map((character) => `<div>${character.imageUrl ? `<img src="${escapeHtml(character.imageUrl)}" alt="${escapeHtml(character.name)}">` : ""}<span>${escapeHtml(character.name)}</span></div>`).join("")}
+    </div>
+    <div class="panel-production-list">
+      ${episode.panels.length ? episode.panels.map((panel) => `<article class="production-panel-row">
+        <div class="panel-order">${String(panel.order).padStart(2, "0")}</div>
+        <div class="production-thumb">${panel.imageUrl ? `<img src="${escapeHtml(panel.imageUrl)}" alt="${escapeHtml(panel.id)}">` : panel.candidates?.[0]?.imageUrl ? `<img src="${escapeHtml(panel.candidates[0].imageUrl)}" alt="${escapeHtml(panel.id)} 후보">` : '<div class="asset-placeholder">생성 대기</div>'}</div>
+        <div><strong>${escapeHtml(panel.description)}</strong><p>${escapeHtml(panel.dialogue || "대사 없음")}</p><small>${escapeHtml(panel.status)}</small></div>
+        <button class="button" data-action="view-comic-stage" data-stage="review">검토</button>
+      </article>`).join("") : '<div class="empty-state compact-empty"><h3>패널이 아직 없습니다</h3><p>콘티를 기준으로 AI 에이전트에게 패널 제작을 맡기세요.</p><button class="button primary" data-action="open-comic-handoff">이미지 생성 맡기기</button></div>'}
+    </div>
+  </section>`;
+}
+
+function comicReviewStage(project, episode) {
+  return `<section class="comic-stage-content" id="comic-review-stage">
+    <div class="stage-heading"><div><span class="section-label">03 · Review</span><h2>후보 선택과 패널 QA</h2></div><span class="review-rule">사람이 승인한 결과만 기억</span></div>
+    ${episode.panels.length ? episode.panels.map((panel) => comicPanelReview(project, episode, panel)).join("") : '<div class="quiet-empty">검토할 패널이 없습니다.</div>'}
+  </section>`;
+}
+
+function comicPanelReview(project, episode, panel) {
+  const selectedId = panel.review?.candidateId;
+  const memory = store.memory.find((item) => item.source === `${project.id}/${episode.id}/${panel.id}`);
+  return `<article class="comic-review-card">
+    <div class="review-card-head"><div><span class="section-label">${escapeHtml(panel.id)}</span><h3>${escapeHtml(panel.description)}</h3></div><span class="review-status ${panel.status}">${escapeHtml(panel.status)}</span></div>
+    ${panel.candidates?.length ? `<div class="candidate-grid">
+      ${panel.candidates.map((candidate) => `<figure class="candidate ${candidate.id === selectedId ? "selected" : ""}">
+        <div class="candidate-label">후보 ${escapeHtml(candidate.label)}</div>
+        <img src="${escapeHtml(candidate.imageUrl)}" alt="${escapeHtml(panel.id)} 후보 ${escapeHtml(candidate.label)}">
+        ${panel.review ? `<figcaption>${escapeHtml(candidate.note || "")}</figcaption>` : ""}
+      </figure>`).join("")}
+    </div>
+    <textarea class="review-reason" id="review-reason-${panel.id}" rows="3" placeholder="선택 근거 또는 재생성 진단">${escapeHtml(panel.review?.reason || "")}</textarea>
+    <div class="candidate-actions">
+      ${panel.candidates.map((candidate) => `<button class="button ${candidate.id === selectedId ? "approve" : ""}" data-action="select-comic-candidate" data-panel-id="${panel.id}" data-candidate-id="${candidate.id}">${escapeHtml(candidate.label)} 선택</button>`).join("")}
+      <button class="button" data-action="hold-comic-candidates" data-panel-id="${panel.id}">동점</button>
+      <button class="button danger" data-action="reject-comic-candidates" data-panel-id="${panel.id}">모두 탈락</button>
+    </div>` : `<div class="single-panel-preview">${panel.imageUrl ? `<img src="${escapeHtml(panel.imageUrl)}" alt="${escapeHtml(panel.id)}">` : '<div class="asset-placeholder">이미지 없음</div>'}</div>`}
+    ${panel.review ? `<section class="panel-qa-box">
+      <div><span class="section-label">Panel QA</span><strong>${panel.qa.approved ? "통과" : "검토 중"}</strong></div>
+      <div class="qa-check-grid">
+        ${[["composition", "구도"], ["character", "캐릭터"], ["continuity", "연속성"], ["text", "대사 분리"]].map(([key, label]) => `<label>${label}<select id="qa-${panel.id}-${key}"><option value="pending" ${panel.qa[key] === "pending" ? "selected" : ""}>미확인</option><option value="pass" ${panel.qa[key] === "pass" ? "selected" : ""}>통과</option><option value="fail" ${panel.qa[key] === "fail" ? "selected" : ""}>수정</option></select></label>`).join("")}
+      </div>
+      <div class="qa-actions"><button class="button" data-action="save-comic-qa" data-panel-id="${panel.id}">QA 저장</button>${panel.review.humanApproved ? `<button class="button approve" data-action="approve-comic-memory" data-panel-id="${panel.id}" ${memory ? "disabled" : ""}>${memory ? "기억 승인됨" : "판단을 기억"}</button>` : ""}</div>
+    </section>` : ""}
+  </article>`;
+}
+
+function comicPublishStage(project, episode) {
+  const readiness = comicPublishReadiness(episode);
+  return `<section class="comic-stage-content">
+    <div class="stage-heading"><div><span class="section-label">04 · Publish</span><h2>발행</h2></div><a class="button" href="#reader/${project.id}/${episode.id}">독자 화면 미리보기</a></div>
+    <div class="publish-gate ${readiness.ready ? "ready" : "blocked"}">
+      <div><span class="section-label">Release gate</span><h3>${readiness.ready ? "발행 준비 완료" : "아직 발행할 수 없습니다"}</h3><p>${readiness.ready ? `승인 패널 ${readiness.total}개가 준비됐습니다.` : readiness.issues.join(" · ")}</p></div>
+      <button class="button ${readiness.ready ? "approve" : ""}" data-action="publish-comic" ${readiness.ready ? "" : "disabled"}>${episode.publish.status === "published" ? "발행됨" : "에피소드 발행"}</button>
+    </div>
+    <div class="publish-form">
+      <label>발행 제목<input id="comic-publish-title" value="${escapeHtml(episode.publish.title)}"></label>
+      <label>소개<textarea id="comic-publish-summary" rows="3">${escapeHtml(episode.publish.summary)}</textarea></label>
+    </div>
+    ${comicReaderPanels(episode, false)}
+  </section>`;
+}
+
+function comicReaderPanels(episode, readerMode) {
+  const panels = [...episode.panels].filter((panel) => panel.imageUrl && (panel.status === "approved" || !readerMode)).sort((a, b) => a.order - b.order);
+  return `<div class="comic-reader ${readerMode ? "reader-mode" : "preview-mode"}">
+    ${panels.length ? panels.map((panel) => `<figure><img src="${escapeHtml(panel.imageUrl)}" alt="${escapeHtml(panel.description)}">${panel.dialogue ? `<figcaption>${escapeHtml(panel.dialogue)}</figcaption>` : ""}</figure>`).join("") : '<div class="quiet-empty">승인된 패널이 없습니다.</div>'}
+  </div>`;
+}
+
+function readerView() {
+  const [, projectId, episodeId] = location.hash.replace("#", "").split("/");
+  const project = store.comicProjects.find((item) => item.id === projectId) || activeComicProject(store);
+  const episode = project?.episodes.find((item) => item.id === episodeId) || project?.episodes[0];
+  if (!project || !episode) return `${pageHeader("만화를 찾을 수 없습니다", "CLE5 Comic Workspace에서 발행 상태를 확인하세요.")}`;
+  return `<div class="reader-page">
+    <header><a href="#comic">CLE5</a><span>${escapeHtml(project.title)}</span></header>
+    <section class="reader-title"><span>${escapeHtml(episode.id)}</span><h1>${escapeHtml(episode.publish.title)}</h1><p>${escapeHtml(episode.publish.summary)}</p></section>
+    ${comicReaderPanels(episode, true)}
+    <footer>Created and approved in CLE5</footer>
+  </div>`;
+}
+
+function openNewComicProjectModal() {
+  modalRoot.innerHTML = `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><span class="section-label">New comic</span><h2>만화 프로젝트 만들기</h2></div><button class="icon-button" data-action="close-modal">×</button></div><label>프로젝트 제목<input id="new-comic-title" placeholder="예: 별을 기다리는 사람들"></label><label>창작 목적<textarea id="new-comic-purpose" rows="4" placeholder="이 만화가 독자에게 남길 경험"></textarea></label><div class="modal-actions"><button class="button" data-action="close-modal">취소</button><button class="button primary" data-action="create-comic-project">프로젝트 생성</button></div></section></div>`;
+}
+
+function openNewComicEpisodeModal() {
+  modalRoot.innerHTML = `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><span class="section-label">New episode</span><h2>에피소드 추가</h2></div><button class="icon-button" data-action="close-modal">×</button></div><label>에피소드 제목<input id="new-episode-title" placeholder="예: 첫 번째 신호"></label><label>한 줄 이야기<input id="new-episode-logline" placeholder="누가 무엇을 발견하는가"></label><div class="modal-actions"><button class="button" data-action="close-modal">취소</button><button class="button primary" data-action="create-comic-episode">에피소드 생성</button></div></section></div>`;
+}
+
+function openComicArtifactModal() {
+  modalRoot.innerHTML = `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><span class="section-label">Artifact</span><h2>산출물 등록</h2></div><button class="icon-button" data-action="close-modal">×</button></div><label>종류<select id="artifact-type"><option value="character">캐릭터</option><option value="storyboard">콘티</option><option value="panel">패널</option><option value="reference">레퍼런스</option></select></label><label>이름<input id="artifact-label" placeholder="예: 미나 캐릭터 시트"></label><label>이미지 URL 또는 CLE5 경로<input id="artifact-url" placeholder="https://... 또는 ./assets/..."></label><label>설명<textarea id="artifact-note" rows="4"></textarea></label><div class="modal-actions"><button class="button" data-action="close-modal">취소</button><button class="button primary" data-action="register-comic-artifact">등록</button></div></section></div>`;
+}
+
+function openComicHandoffModal() {
+  const episode = activeComicEpisode(store);
+  const suggested = episode.stage === "structure" ? "스토리와 콘티 구성" : episode.stage === "production" ? "패널 이미지 후보 생성" : episode.stage === "review" ? "패널 비평과 개선" : "발행본 검수";
+  modalRoot.innerHTML = `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><span class="section-label">Comic agent handoff</span><h2>AI 에이전트에게 만화 작업 맡기기</h2></div><button class="icon-button" data-action="close-modal">×</button></div><p class="modal-help">CLE5의 프로젝트, 에피소드, 참조 이미지, 승인 기억과 결과 저장 계약을 하나의 링크로 전달합니다.</p><label>맡길 작업<select id="comic-handoff-task">${["스토리와 콘티 구성", "캐릭터 시트 생성", "패널 이미지 후보 생성", "패널 비평과 개선", "발행본 검수"].map((task) => `<option ${task === suggested ? "selected" : ""}>${task}</option>`).join("")}</select></label><label>추가 요청<textarea id="comic-handoff-request" rows="4" placeholder="예: PANEL-001 후보를 두 장 만들고 CLE5 경로를 반환해줘."></textarea></label><div id="comic-handoff-link-area"></div><div class="modal-actions"><button class="button" data-action="close-modal">취소</button><button class="button primary" data-action="create-comic-handoff-link">공유 링크 만들기</button></div></section></div>`;
+}
+
+function createComicHandoffLink() {
+  const project = activeComicProject(store);
+  const episode = activeComicEpisode(store);
+  const task = document.querySelector("#comic-handoff-task").value;
+  const request = document.querySelector("#comic-handoff-request").value.trim();
+  const packet = comicHandoffPacket(store, project, episode, task, request);
+  const link = `${location.origin}${location.pathname}#agent/${encodePacket(packet)}`;
+  store.pendingComicHandoff = { projectId: project.id, episodeId: episode.id, task, createdAt: new Date().toISOString() };
+  saveStore();
+  document.querySelector("#comic-handoff-link-area").innerHTML = `<label>에이전트에게 전달할 링크<textarea id="comic-handoff-link" rows="3" readonly>${escapeHtml(link)}</textarea></label><button class="button approve wide" data-action="copy-comic-handoff-link">링크 복사</button><p class="link-warning">링크에는 작품과 이미지 참조 URL이 포함됩니다.</p>`;
+}
+
+function comicAgentView(packet) {
+  return `${pageHeader("CLE5 Comic Agent Brief", "요청된 산출물을 실제로 만들고 CLE5 반환 계약을 지키세요.", '<button class="button" data-action="copy-agent-brief">Brief 복사</button>')}
+    <div class="agent-brief" id="agent-brief">
+      <section class="agent-mission"><span class="section-label">Mission</span><h2>${escapeHtml(packet.task)}</h2><p>${escapeHtml(packet.request || "추가 요청 없음")}</p></section>
+      <section class="brief-section"><span class="section-label">Project</span><h3>${escapeHtml(packet.project.title)} · ${escapeHtml(packet.episode.title)}</h3><p>${escapeHtml(packet.project.purpose)}</p><p>${escapeHtml(packet.episode.logline)}</p></section>
+      <section class="brief-section"><span class="section-label">Story</span><div class="brief-document">${formatDocument(packet.episode.story || "미작성")}</div></section>
+      <div class="brief-documents"><section class="brief-section"><span class="section-label">Characters</span>${packet.episode.characters.map((character) => `<article class="brief-asset"><strong>${escapeHtml(character.name)}</strong><p>${escapeHtml(character.description)}</p><code>${escapeHtml(character.imageUrl || "이미지 없음")}</code></article>`).join("") || "없음"}</section><section class="brief-section"><span class="section-label">Storyboard</span>${packet.episode.storyboard.map((shot) => `<p><strong>${escapeHtml(shot.id)}</strong> ${escapeHtml(shot.description)}</p>`).join("") || "없음"}</section></div>
+      <section class="brief-section memory-brief"><span class="section-label">Approved memory</span><ol>${packet.approvedMemory.map((item) => `<li>${escapeHtml(item.statement)}${item.assetUrl ? `<small>${escapeHtml(item.assetUrl)}</small>` : ""}</li>`).join("") || "<li>승인 기억 없음</li>"}</ol></section>
+      <section class="brief-section"><span class="section-label">Target</span><h3>${escapeHtml(packet.targetRoot)}</h3><ul class="rule-list">${packet.operatingRules.map((rule) => `<li>${escapeHtml(rule)}</li>`).join("")}</ul></section>
+      <section class="return-contract"><span class="section-label">Return contract</span><pre>---CLE5-CONTENT-START---
+[스토리·콘티·대사 등 텍스트 결과. 없으면 없음]
+---CLE5-CONTENT-END---
+
+---CLE5-ASSETS-START---
+[한 줄에 하나: type|target-id|url-or-cle5-path|label]
+---CLE5-ASSETS-END---
+
+---CLE5-NOTE-START---
+[판단 근거와 불확실성]
+---CLE5-NOTE-END---
+
+---CLE5-MEMORY-START---
+[다음 작업에도 재사용할 판단. 없으면 없음]
+---CLE5-MEMORY-END---</pre></section>
+    </div>`;
+}
+
+function openComicResultModal() {
+  modalRoot.innerHTML = `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><span class="section-label">Comic agent result</span><h2>만화 작업 결과 가져오기</h2></div><button class="icon-button" data-action="close-modal">×</button></div><p class="modal-help">에이전트의 전체 응답을 붙여넣으면 텍스트와 산출물 경로를 분리해 현재 에피소드에 등록합니다.</p><label>에이전트 응답<textarea id="comic-agent-result" rows="15"></textarea></label><div class="modal-actions"><button class="button" data-action="close-modal">취소</button><button class="button primary" data-action="apply-comic-result">CLE5에 반영</button></div></section></div>`;
+}
+
+function applyComicResult() {
+  const response = document.querySelector("#comic-agent-result")?.value.trim();
+  if (!response) return showToast("에이전트 응답을 붙여넣으세요.");
+  const episode = activeComicEpisode(store);
+  const content = extractMarked(response, "CONTENT");
+  const assets = extractMarked(response, "ASSETS");
+  const note = extractMarked(response, "NOTE");
+  const memory = extractMarked(response, "MEMORY");
+  if (content && content !== "없음") episode.story = content;
+  assets.split("\n").map((line) => line.trim()).filter(Boolean).forEach((line) => {
+    const [type, targetId, url, label] = line.split("|").map((value) => value?.trim() || "");
+    if (!type || !url) return;
+    if (type === "panel" && targetId) {
+      let panel = episode.panels.find((item) => item.id === targetId);
+      if (!panel) {
+        panel = { id: targetId, order: episode.panels.length + 1, storyboardId: "", description: label || targetId, dialogue: "", status: "candidates_ready", imageUrl: "", candidates: [], review: null, qa: { composition: "pending", character: "pending", continuity: "pending", text: "pending", approved: false, note: "" } };
+        episode.panels.push(panel);
+      }
+      panel.candidates.push({ id: `CAND-${Date.now()}-${panel.candidates.length + 1}`, label: String.fromCharCode(65 + panel.candidates.length), imageUrl: url, note: label });
+      panel.status = "candidates_ready";
+    } else {
+      addComicArtifact(episode, { type, id: targetId || undefined, label: label || targetId, url, note });
+    }
+  });
+  if (note) episode.reviewHistory.push({ panelId: null, verdict: "agent_note", reason: note, reviewedAt: new Date().toISOString() });
+  if (memory && memory !== "없음") {
+    const work = currentWork();
+    work?.proposals.push({ id: `PROPOSAL-${Date.now()}`, feedbackId: null, tag: "만화 에이전트 제안", learning: memory, action: "결과를 검토한 뒤 기억 적용 여부를 결정한다.", status: "pending" });
+  }
+  delete store.pendingComicHandoff;
+  episode.updatedAt = new Date().toISOString();
+  saveStore();
+  modalRoot.innerHTML = "";
+  comicViewStage = episode.stage;
+  render();
+  showToast("만화 작업 결과를 현재 에피소드에 반영했습니다.");
 }
 
 function settingsView() {
@@ -709,11 +1042,13 @@ function settingsView() {
 function render() {
   const route = currentRoute();
   const views = {
+    comic: comicView,
     workspace: workspaceView,
     history: historyView,
     memory: memoryView,
     settings: settingsView,
-    agent: agentView
+    agent: agentView,
+    reader: readerView
   };
   app.innerHTML = views[route]();
   document.querySelectorAll("[data-route]").forEach((link) => {
@@ -893,9 +1228,10 @@ async function pullWorkspaceFromGitHub() {
       githubStatus = { state: "connected", message: "불러오기를 취소했습니다." };
       return;
     }
-    store = remote.workspace;
+    store = ensureComicWorkspace(remote.workspace);
     selectedWorkId = store.activeWorkId;
     workspaceMode = "original";
+    comicViewStage = activeComicEpisode(store)?.stage || "structure";
     saveStore();
     githubSyncMeta = {
       sha: remote.sha,
@@ -950,12 +1286,30 @@ document.addEventListener("input", (event) => {
   if (event.target.id === "document-content") {
     updateWork(event.target.dataset.field, event.target.value);
   }
+  const episode = activeComicEpisode(store);
+  if (event.target.id === "comic-episode-title" && episode) episode.title = event.target.value;
+  if (event.target.id === "comic-episode-logline" && episode) episode.logline = event.target.value;
+  if (event.target.id === "comic-episode-story" && episode) episode.story = event.target.value;
+  if (event.target.id === "comic-publish-title" && episode) episode.publish.title = event.target.value;
+  if (event.target.id === "comic-publish-summary" && episode) episode.publish.summary = event.target.value;
+  if (event.target.id.startsWith("comic-episode-") || event.target.id.startsWith("comic-publish-")) {
+    if (episode) episode.updatedAt = new Date().toISOString();
+    saveStore();
+  }
 });
 
 document.addEventListener("change", async (event) => {
+  if (event.target.id === "comic-project-select") {
+    store.activeComicProjectId = event.target.value;
+    const episode = activeComicEpisode(store);
+    comicViewStage = episode?.stage || "structure";
+    saveStore();
+    render();
+    return;
+  }
   if (event.target.id !== "import-file") return;
   try {
-    pendingImport = JSON.parse(await event.target.files[0].text());
+    pendingImport = ensureComicWorkspace(JSON.parse(await event.target.files[0].text()));
     if (!validateWorkspace(pendingImport)) {
       throw new Error("invalid workspace");
     }
@@ -995,7 +1349,125 @@ document.addEventListener("click", async (event) => {
   if (!action) return;
 
   const work = currentWork();
-  if (action === "open-handoff") {
+  if (action === "new-comic-project") {
+    openNewComicProjectModal();
+  } else if (action === "create-comic-project") {
+    const project = createComicProject(store, {
+      title: document.querySelector("#new-comic-title")?.value || "",
+      purpose: document.querySelector("#new-comic-purpose")?.value || ""
+    });
+    comicViewStage = project.episodes[0].stage;
+    saveStore();
+    modalRoot.innerHTML = "";
+    location.hash = "comic";
+    render();
+  } else if (action === "new-comic-episode") {
+    openNewComicEpisodeModal();
+  } else if (action === "create-comic-episode") {
+    const project = activeComicProject(store);
+    const episode = createComicEpisode(project, {
+      title: document.querySelector("#new-episode-title")?.value || "",
+      logline: document.querySelector("#new-episode-logline")?.value || ""
+    });
+    comicViewStage = episode.stage;
+    saveStore();
+    modalRoot.innerHTML = "";
+    render();
+  } else if (action === "select-comic-episode") {
+    const project = activeComicProject(store);
+    project.activeEpisodeId = actionButton.dataset.episodeId;
+    comicViewStage = activeComicEpisode(store)?.stage || "structure";
+    saveStore();
+    render();
+  } else if (action === "view-comic-stage") {
+    comicViewStage = actionButton.dataset.stage || "structure";
+    render();
+  } else if (action === "advance-comic-stage") {
+    const episode = activeComicEpisode(store);
+    const index = comicStages.indexOf(episode.stage);
+    if (index < comicStages.length - 1) setComicStage(episode, comicStages[index + 1]);
+    comicViewStage = episode.stage;
+    saveStore();
+    render();
+  } else if (action === "focus-comic-review") {
+    comicViewStage = "review";
+    render();
+  } else if (action === "open-comic-artifact") {
+    openComicArtifactModal();
+  } else if (action === "register-comic-artifact") {
+    const episode = activeComicEpisode(store);
+    const type = document.querySelector("#artifact-type")?.value || "reference";
+    const artifact = addComicArtifact(episode, {
+      type,
+      label: document.querySelector("#artifact-label")?.value || "",
+      url: document.querySelector("#artifact-url")?.value || "",
+      note: document.querySelector("#artifact-note")?.value || ""
+    });
+    if (type === "storyboard") {
+      episode.storyboard.push({ id: artifact.id, order: episode.storyboard.length + 1, description: artifact.note || artifact.label, camera: "unspecified", characters: [] });
+    } else if (type === "panel") {
+      episode.panels.push({ id: artifact.id, order: episode.panels.length + 1, storyboardId: "", description: artifact.label, dialogue: "", status: "generated", imageUrl: artifact.url || artifact.path, candidates: [], review: { verdict: "winner", candidateId: null, reason: "등록된 단일 패널", reviewedAt: new Date().toISOString(), humanApproved: true }, qa: { composition: "pending", character: "pending", continuity: "pending", text: "pending", approved: false, note: "" } });
+    }
+    saveStore();
+    modalRoot.innerHTML = "";
+    render();
+    showToast("산출물을 현재 에피소드에 등록했습니다.");
+  } else if (action === "open-comic-handoff") {
+    openComicHandoffModal();
+  } else if (action === "create-comic-handoff-link") {
+    createComicHandoffLink();
+  } else if (action === "copy-comic-handoff-link") {
+    navigator.clipboard?.writeText(document.querySelector("#comic-handoff-link").value);
+    showToast("Comic Agent 링크를 복사했습니다.");
+  } else if (action === "open-comic-result") {
+    openComicResultModal();
+  } else if (action === "apply-comic-result") {
+    applyComicResult();
+  } else if (action === "select-comic-candidate") {
+    const episode = activeComicEpisode(store);
+    const panelId = actionButton.dataset.panelId;
+    const reason = document.querySelector(`#review-reason-${panelId}`)?.value || "";
+    if (!reason.trim()) return showToast("선택 근거를 먼저 입력하세요.");
+    selectPanelCandidate(episode, panelId, { verdict: "winner", candidateId: actionButton.dataset.candidateId, reason });
+    saveStore();
+    render();
+    showToast("후보를 선택했습니다. QA 후 기억으로 승인할 수 있습니다.");
+  } else if (action === "hold-comic-candidates" || action === "reject-comic-candidates") {
+    const episode = activeComicEpisode(store);
+    const panelId = actionButton.dataset.panelId;
+    const reason = document.querySelector(`#review-reason-${panelId}`)?.value || "";
+    if (!reason.trim()) return showToast("판정 근거를 먼저 입력하세요.");
+    selectPanelCandidate(episode, panelId, { verdict: action === "hold-comic-candidates" ? "tie" : "both_bad", reason });
+    saveStore();
+    render();
+  } else if (action === "save-comic-qa") {
+    const episode = activeComicEpisode(store);
+    const panel = episode.panels.find((item) => item.id === actionButton.dataset.panelId);
+    const values = {};
+    ["composition", "character", "continuity", "text"].forEach((key) => { values[key] = document.querySelector(`#qa-${panel.id}-${key}`)?.value || "pending"; });
+    updatePanelQa(panel, values);
+    saveStore();
+    render();
+    showToast(panel.qa.approved ? "패널 QA를 통과했습니다." : "패널 QA를 저장했습니다.");
+  } else if (action === "approve-comic-memory") {
+    const project = activeComicProject(store);
+    const episode = activeComicEpisode(store);
+    approvePanelMemory(store, project, episode, actionButton.dataset.panelId);
+    saveStore();
+    render();
+    showToast("승인한 패널과 판단을 다음 작업의 기억에 반영했습니다.");
+  } else if (action === "publish-comic") {
+    const episode = activeComicEpisode(store);
+    const readiness = comicPublishReadiness(episode);
+    if (!readiness.ready) return showToast("발행 전 패널 QA를 완료하세요.");
+    episode.publish.status = "published";
+    episode.publish.publishedAt = new Date().toISOString();
+    setComicStage(episode, "publish");
+    comicViewStage = "publish";
+    saveStore();
+    render();
+    showToast("에피소드를 발행 상태로 전환했습니다.");
+  } else if (action === "open-handoff") {
     openHandoffModal();
   } else if (action === "create-handoff-link") {
     createHandoffLink();
@@ -1076,7 +1548,7 @@ document.addEventListener("click", async (event) => {
   } else if (action === "disconnect-github") {
     disconnectGitHub();
   } else if (action === "confirm-import") {
-    store = pendingImport;
+    store = ensureComicWorkspace(pendingImport);
     selectedWorkId = store.activeWorkId;
     pendingImport = null;
     saveStore();
@@ -1088,8 +1560,9 @@ document.addEventListener("click", async (event) => {
       store = initialStore();
       selectedWorkId = store.activeWorkId;
       workspaceMode = "original";
+      comicViewStage = activeComicEpisode(store)?.stage || "structure";
       saveStore();
-      location.hash = "workspace";
+      location.hash = "comic";
       render();
     }
   }
