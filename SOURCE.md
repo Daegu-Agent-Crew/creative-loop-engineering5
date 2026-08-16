@@ -8,5 +8,7 @@ This repository contains only the generated static site for CLE5.
 - Source change: `577c6a6` (`feat: add standalone comic production workspace`)
 - Includes: CLE5-native Comic Workspace, generated WebP assets, review, QA,
   approved memory, Agent Handoff, and vertical reader
+- Pilot change: `10ea2fb` (`feat: add CLE5-native three body pilot`)
+- Pilot assets: one new character reference and six representative panel candidates
 
 Do not edit generated application files directly in this repository.

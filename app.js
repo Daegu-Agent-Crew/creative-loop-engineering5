@@ -18,6 +18,7 @@ import {
   createComicEpisode,
   createComicProject,
   ensureComicWorkspace,
+  installThreeBodyPilot,
   selectPanelCandidate,
   setComicStage,
   updatePanelQa
@@ -725,7 +726,7 @@ function comicView() {
     ${pageHeader(
       `${project.title} · ${episode.title}`,
       "현재 단계와 다음 결정에 집중하고, 제작 데이터는 CLE5가 내부에서 관리합니다.",
-      '<span class="save-state">이 브라우저에 자동 저장</span><button class="button" data-action="open-comic-result">AI 결과 붙여넣기</button><button class="button primary" data-action="open-comic-handoff">AI 에이전트에게 맡기기</button><button class="button" data-action="new-comic-episode">새 에피소드</button>'
+      '<span class="save-state">이 브라우저에 자동 저장</span><button class="button" data-action="install-three-body-pilot">삼체 EP001 시작</button><button class="button" data-action="open-comic-result">AI 결과 붙여넣기</button><button class="button primary" data-action="open-comic-handoff">AI 에이전트에게 맡기기</button><button class="button" data-action="new-comic-episode">새 에피소드</button>'
     )}
     <div class="comic-shell">
       <aside class="comic-sidebar">
@@ -1351,6 +1352,12 @@ document.addEventListener("click", async (event) => {
   const work = currentWork();
   if (action === "new-comic-project") {
     openNewComicProjectModal();
+  } else if (action === "install-three-body-pilot") {
+    const { project, created } = installThreeBodyPilot(store);
+    comicViewStage = project.episodes[0].stage;
+    saveStore();
+    render();
+    showToast(created ? "삼체 EP001 파일럿을 CLE5에 등록했습니다." : "삼체 EP001 파일럿으로 이동했습니다.");
   } else if (action === "create-comic-project") {
     const project = createComicProject(store, {
       title: document.querySelector("#new-comic-title")?.value || "",
