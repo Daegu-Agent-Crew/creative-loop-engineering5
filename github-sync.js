@@ -10,9 +10,26 @@ export class GitHubApiError extends Error {
 }
 
 export function parseRepository(value) {
-  const [owner, repo, ...rest] = String(value).trim().split("/");
+  let normalized = String(value).trim();
+  if (/^https?:\/\//i.test(normalized)) {
+    let url;
+    try {
+      url = new URL(normalized);
+    } catch {
+      throw new Error("저장소는 owner/repository 또는 GitHub URL 형식으로 입력하세요.");
+    }
+    if (url.hostname.toLowerCase() !== "github.com") {
+      throw new Error("GitHub 저장소 주소만 사용할 수 있습니다.");
+    }
+    normalized = url.pathname;
+  }
+  normalized = normalized
+    .replace(/^git@github\.com:/i, "")
+    .replace(/^\/+|\/+$/g, "")
+    .replace(/\.git$/i, "");
+  const [owner, repo, ...rest] = normalized.split("/");
   if (!owner || !repo || rest.length) {
-    throw new Error("저장소는 owner/repository 형식으로 입력하세요.");
+    throw new Error("저장소는 owner/repository 또는 GitHub URL 형식으로 입력하세요.");
   }
   return { owner, repo };
 }
@@ -94,6 +111,10 @@ export function createGitHubSyncClient(config, fetchImpl = fetch) {
     return request(baseUrl);
   }
 
+  async function inspectIdentity() {
+    return request(`${API_ROOT}/user`);
+  }
+
   async function readWorkspace() {
     const url = `${baseUrl}/contents/${path}?ref=${encodeURIComponent(branch)}`;
     try {
@@ -141,6 +162,8 @@ export function createGitHubSyncClient(config, fetchImpl = fetch) {
   }
 
   return {
+    repository: `${owner}/${repo}`,
+    inspectIdentity,
     inspectRepository,
     readWorkspace,
     writeWorkspace
