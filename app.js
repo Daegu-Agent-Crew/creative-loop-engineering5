@@ -1153,13 +1153,13 @@ function exportData() {
 }
 
 function readGitHubForm() {
+  const parsedRepository = parseRepository(document.querySelector("#github-repository")?.value || "");
   const settings = {
-    repository: document.querySelector("#github-repository")?.value.trim() || "",
+    repository: `${parsedRepository.owner}/${parsedRepository.repo}`,
     branch: document.querySelector("#github-branch")?.value.trim() || "",
     path: document.querySelector("#github-path")?.value.trim() || "",
     token: document.querySelector("#github-token")?.value.trim() || ""
   };
-  parseRepository(settings.repository);
   if (!settings.branch || !settings.path || !settings.token) {
     throw new Error("저장소, 브랜치, 데이터 경로, PAT를 모두 입력하세요.");
   }
@@ -1180,7 +1180,12 @@ function gitHubErrorMessage(error) {
   if (error instanceof GitHubApiError) {
     if (error.status === 401) return "PAT가 유효하지 않거나 만료되었습니다.";
     if (error.status === 403) return "저장소 Contents 권한이 부족합니다.";
-    if (error.status === 404) return "저장소를 찾지 못했습니다. 저장소 이름과 PAT 접근 범위를 확인하세요.";
+    if (error.status === 404) {
+      if (error.details?.login && error.details?.repository) {
+        return `PAT는 ${error.details.login} 계정으로 유효하지만 ${error.details.repository} 저장소에 접근할 수 없습니다.`;
+      }
+      return "저장소를 찾지 못했습니다. 저장소 이름과 PAT 접근 범위를 확인하세요.";
+    }
     if (error.status === 409) return "GitHub 파일 상태가 변경되었습니다. 먼저 다시 불러오세요.";
   }
   return error.message || "GitHub 연결 중 오류가 발생했습니다.";
@@ -1204,13 +1209,22 @@ async function runGitHubAction(action) {
 
 async function testGitHubConnection() {
   await runGitHubAction(async (client) => {
-    const repository = await client.inspectRepository();
+    const identity = await client.inspectIdentity();
+    let repository;
+    try {
+      repository = await client.inspectRepository();
+    } catch (error) {
+      if (error instanceof GitHubApiError && error.status === 404) {
+        error.details = { ...error.details, login: identity.login, repository: client.repository };
+      }
+      throw error;
+    }
     const canPush = repository.permissions?.push !== false;
     githubStatus = {
       state: canPush ? "connected" : "error",
       message: canPush
-        ? `${repository.full_name}에 읽기·쓰기 연결이 확인됐습니다.`
-        : `${repository.full_name}은 읽기만 가능합니다. Contents 쓰기 권한을 추가하세요.`
+        ? `${identity.login} → ${repository.full_name} 읽기·쓰기 연결이 확인됐습니다.`
+        : `${identity.login} → ${repository.full_name}은 읽기만 가능합니다. Contents 쓰기 권한을 추가하세요.`
     };
   });
 }
