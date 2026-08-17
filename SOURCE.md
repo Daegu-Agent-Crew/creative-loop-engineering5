@@ -11,5 +11,6 @@ This repository contains only the generated static site for CLE5.
 - Pilot change: `10ea2fb` (`feat: add CLE5-native three body pilot`)
 - Pilot assets: one new character reference and six representative panel candidates
 - GitHub sync fix: `7f3f53c` (repository normalization and PAT identity diagnostics)
+- Generation request card: `cda7b10` (DNA, State, Delta, Camera, Narrative, Critic return evidence)
 
 Do not edit generated application files directly in this repository.

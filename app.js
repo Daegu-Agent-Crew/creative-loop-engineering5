@@ -11,6 +11,7 @@ import {
   activeComicProject,
   addComicArtifact,
   approvePanelMemory,
+  buildGenerationRequest,
   comicHandoffPacket,
   comicPublishReadiness,
   comicStageLabels,
@@ -19,6 +20,7 @@ import {
   createComicProject,
   ensureComicWorkspace,
   installThreeBodyPilot,
+  parseComicAgentResult,
   selectPanelCandidate,
   setComicStage,
   updatePanelQa
@@ -892,7 +894,9 @@ function openComicArtifactModal() {
 function openComicHandoffModal() {
   const episode = activeComicEpisode(store);
   const suggested = episode.stage === "structure" ? "스토리와 콘티 구성" : episode.stage === "production" ? "패널 이미지 후보 생성" : episode.stage === "review" ? "패널 비평과 개선" : "발행본 검수";
-  modalRoot.innerHTML = `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><span class="section-label">Comic agent handoff</span><h2>AI 에이전트에게 만화 작업 맡기기</h2></div><button class="icon-button" data-action="close-modal">×</button></div><p class="modal-help">CLE5의 프로젝트, 에피소드, 참조 이미지, 승인 기억과 결과 저장 계약을 하나의 링크로 전달합니다.</p><label>맡길 작업<select id="comic-handoff-task">${["스토리와 콘티 구성", "캐릭터 시트 생성", "패널 이미지 후보 생성", "패널 비평과 개선", "발행본 검수"].map((task) => `<option ${task === suggested ? "selected" : ""}>${task}</option>`).join("")}</select></label><label>추가 요청<textarea id="comic-handoff-request" rows="4" placeholder="예: PANEL-001 후보를 두 장 만들고 CLE5 경로를 반환해줘."></textarea></label><div id="comic-handoff-link-area"></div><div class="modal-actions"><button class="button" data-action="close-modal">취소</button><button class="button primary" data-action="create-comic-handoff-link">공유 링크 만들기</button></div></section></div>`;
+  const panelOptions = episode.panels.map((panel) => `<option value="${escapeHtml(panel.id)}">${escapeHtml(panel.id)} · ${escapeHtml(panel.description)}</option>`).join("");
+  const referenceIds = [...episode.characters.map((item) => item.id), ...episode.artifacts.map((item) => item.id)].join(", ");
+  modalRoot.innerHTML = `<div class="modal-backdrop"><section class="modal wide-modal" role="dialog" aria-modal="true"><div class="modal-head"><div><span class="section-label">Comic agent handoff</span><h2>AI 에이전트에게 만화 작업 맡기기</h2></div><button class="icon-button" data-action="close-modal">×</button></div><p class="modal-help">CLE5의 프로젝트, 에피소드, 참조 이미지, 승인 기억과 결과 저장 계약을 하나의 링크로 전달합니다.</p><label>맡길 작업<select id="comic-handoff-task">${["스토리와 콘티 구성", "캐릭터 시트 생성", "패널 이미지 후보 생성", "패널 비평과 개선", "발행본 검수"].map((task) => `<option ${task === suggested ? "selected" : ""}>${task}</option>`).join("")}</select></label><label>추가 요청<textarea id="comic-handoff-request" rows="3" placeholder="예: PANEL-001 후보를 두 장 만들고 CLE5 경로를 반환해줘."></textarea></label><section class="generation-card-form"><span class="section-label">Generation request card</span><p>이미지 생성에서는 고정 기준은 유지하고 이번 컷의 변화만 지정합니다. 이 값은 Agent Brief와 결과 증거에 함께 보존됩니다.</p><label>대상 패널<select id="generation-panel-id"><option value="">패널을 선택하지 않음</option>${panelOptions}</select></label><label>고정 기준 (Bible/레퍼런스 ID, 쉼표로 구분)<input id="generation-reference-ids" value="${escapeHtml(referenceIds)}" placeholder="CHAR-WANG, ASSET-LAB-V1"></label><div class="generation-card-grid"><label>이전 상태<textarea id="generation-previous-state" rows="3" placeholder="인물 위치, 감정, 소품, 시간대"></textarea></label><label>이번 변화 (Delta)<textarea id="generation-delta" rows="3" placeholder="이번 컷에서만 일어나는 행동·표정·사건"></textarea></label><label>카메라<input id="generation-camera" placeholder="over-the-shoulder, monitor 60%"></label><label>서사 목적<select id="generation-narrative"><option value="information">정보</option><option value="emotion">감정</option><option value="action">행동</option><option value="question">의문</option><option value="reversal">반전</option><option value="transition">전환</option><option value="spectacle">스펙터클</option></select></label><label>중요도<select id="generation-tier"><option value="A">A · 핵심 장면</option><option value="B" selected>B · 일반 장면</option><option value="C">C · 전환/삽입</option></select></label><label>후보 수<select id="generation-candidate-count"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option><option value="4">4</option></select></label></div></section><div id="comic-handoff-link-area"></div><div class="modal-actions"><button class="button" data-action="close-modal">취소</button><button class="button primary" data-action="create-comic-handoff-link">공유 링크 만들기</button></div></section></div>`;
 }
 
 function createComicHandoffLink() {
@@ -900,9 +904,21 @@ function createComicHandoffLink() {
   const episode = activeComicEpisode(store);
   const task = document.querySelector("#comic-handoff-task").value;
   const request = document.querySelector("#comic-handoff-request").value.trim();
-  const packet = comicHandoffPacket(store, project, episode, task, request);
+  const generationRequest = buildGenerationRequest(episode, {
+    panelId: document.querySelector("#generation-panel-id")?.value,
+    referenceIds: document.querySelector("#generation-reference-ids")?.value,
+    previousState: document.querySelector("#generation-previous-state")?.value,
+    delta: document.querySelector("#generation-delta")?.value,
+    camera: document.querySelector("#generation-camera")?.value,
+    narrativeFunction: document.querySelector("#generation-narrative")?.value,
+    qualityTier: document.querySelector("#generation-tier")?.value,
+    candidateCount: document.querySelector("#generation-candidate-count")?.value
+  });
+  episode.generationRequests = episode.generationRequests || [];
+  episode.generationRequests.push(generationRequest);
+  const packet = comicHandoffPacket(store, project, episode, task, request, generationRequest);
   const link = `${location.origin}${location.pathname}#agent/${encodePacket(packet)}`;
-  store.pendingComicHandoff = { projectId: project.id, episodeId: episode.id, task, createdAt: new Date().toISOString() };
+  store.pendingComicHandoff = { projectId: project.id, episodeId: episode.id, task, generationRequestId: generationRequest.id, createdAt: new Date().toISOString() };
   saveStore();
   document.querySelector("#comic-handoff-link-area").innerHTML = `<label>에이전트에게 전달할 링크<textarea id="comic-handoff-link" rows="3" readonly>${escapeHtml(link)}</textarea></label><button class="button approve wide" data-action="copy-comic-handoff-link">링크 복사</button><p class="link-warning">링크에는 작품과 이미지 참조 URL이 포함됩니다.</p>`;
 }
@@ -915,6 +931,7 @@ function comicAgentView(packet) {
       <section class="brief-section"><span class="section-label">Story</span><div class="brief-document">${formatDocument(packet.episode.story || "미작성")}</div></section>
       <div class="brief-documents"><section class="brief-section"><span class="section-label">Characters</span>${packet.episode.characters.map((character) => `<article class="brief-asset"><strong>${escapeHtml(character.name)}</strong><p>${escapeHtml(character.description)}</p><code>${escapeHtml(character.imageUrl || "이미지 없음")}</code></article>`).join("") || "없음"}</section><section class="brief-section"><span class="section-label">Storyboard</span>${packet.episode.storyboard.map((shot) => `<p><strong>${escapeHtml(shot.id)}</strong> ${escapeHtml(shot.description)}</p>`).join("") || "없음"}</section></div>
       <section class="brief-section memory-brief"><span class="section-label">Approved memory</span><ol>${packet.approvedMemory.map((item) => `<li>${escapeHtml(item.statement)}${item.assetUrl ? `<small>${escapeHtml(item.assetUrl)}</small>` : ""}</li>`).join("") || "<li>승인 기억 없음</li>"}</ol></section>
+      ${packet.generationRequest ? `<section class="brief-section generation-brief"><span class="section-label">Generation request card</span><dl><div><dt>Target</dt><dd>${escapeHtml(packet.generationRequest.panelId || "미지정")} ${escapeHtml(packet.generationRequest.panelDescription || "")}</dd></div><div><dt>DNA</dt><dd>${escapeHtml(packet.generationRequest.dna.join(", ") || "미지정")}</dd></div><div><dt>Previous state</dt><dd>${escapeHtml(packet.generationRequest.previousState || "미지정")}</dd></div><div><dt>Delta</dt><dd>${escapeHtml(packet.generationRequest.delta || "미지정")}</dd></div><div><dt>Camera</dt><dd>${escapeHtml(packet.generationRequest.camera || "미지정")}</dd></div><div><dt>Narrative</dt><dd>${escapeHtml(packet.generationRequest.narrativeFunction)} · ${escapeHtml(packet.generationRequest.qualityTier)} tier · ${packet.generationRequest.candidateCount} candidates</dd></div></dl></section>` : ""}
       <section class="brief-section"><span class="section-label">Target</span><h3>${escapeHtml(packet.targetRoot)}</h3><ul class="rule-list">${packet.operatingRules.map((rule) => `<li>${escapeHtml(rule)}</li>`).join("")}</ul></section>
       <section class="return-contract"><span class="section-label">Return contract</span><pre>---CLE5-CONTENT-START---
 [스토리·콘티·대사 등 텍스트 결과. 없으면 없음]
@@ -927,6 +944,10 @@ function comicAgentView(packet) {
 ---CLE5-NOTE-START---
 [판단 근거와 불확실성]
 ---CLE5-NOTE-END---
+
+---CLE5-CRITIC-START---
+[DNA 유지, State→Delta 연결, 카메라, 서사 목적, 이미지 오류를 PASS/FIX/REGENERATE로 제안. 사람 QA를 대체하지 않음]
+---CLE5-CRITIC-END---
 
 ---CLE5-MEMORY-START---
 [다음 작업에도 재사용할 판단. 없으면 없음]
@@ -942,14 +963,19 @@ function applyComicResult() {
   const response = document.querySelector("#comic-agent-result")?.value.trim();
   if (!response) return showToast("에이전트 응답을 붙여넣으세요.");
   const episode = activeComicEpisode(store);
-  const content = extractMarked(response, "CONTENT");
-  const assets = extractMarked(response, "ASSETS");
-  const note = extractMarked(response, "NOTE");
-  const memory = extractMarked(response, "MEMORY");
+  const result = parseComicAgentResult(response);
+  const { content, note, memory, critic } = result;
+  episode.agentResults = episode.agentResults || [];
+  episode.agentResults.push({
+    id: `AGENT-RESULT-${Date.now()}`,
+    rawResponse: result.rawResponse,
+    receivedAt: new Date().toISOString(),
+    handoff: store.pendingComicHandoff || null,
+    sections: { content, assets: result.assets, note, critic, memory },
+    warnings: result.warnings
+  });
   if (content && content !== "없음") episode.story = content;
-  assets.split("\n").map((line) => line.trim()).filter(Boolean).forEach((line) => {
-    const [type, targetId, url, label] = line.split("|").map((value) => value?.trim() || "");
-    if (!type || !url) return;
+  result.assets.filter((asset) => asset.valid).forEach(({ type, targetId, url, label }) => {
     if (type === "panel" && targetId) {
       let panel = episode.panels.find((item) => item.id === targetId);
       if (!panel) {
@@ -973,7 +999,9 @@ function applyComicResult() {
   modalRoot.innerHTML = "";
   comicViewStage = episode.stage;
   render();
-  showToast("만화 작업 결과를 현재 에피소드에 반영했습니다.");
+  showToast(result.warnings.length
+    ? `원문을 보존하고 결과를 반영했습니다. 형식 경고 ${result.warnings.length}건을 검토하세요.`
+    : "만화 작업 결과를 현재 에피소드에 반영했습니다.");
 }
 
 function settingsView() {

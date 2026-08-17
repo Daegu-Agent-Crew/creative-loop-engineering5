@@ -324,7 +324,65 @@ export function comicPublishReadiness(episode) {
   return { ready: issues.length === 0, issues, approved, total: panels.length };
 }
 
-export function comicHandoffPacket(store, project, episode, task, request = "") {
+function markedSection(text, name, warnings) {
+  const start = `---CLE5-${name}-START---`;
+  const end = `---CLE5-${name}-END---`;
+  const startAt = text.indexOf(start);
+  if (startAt < 0) {
+    warnings.push(`${name} section is missing.`);
+    return "";
+  }
+  const valueStart = startAt + start.length;
+  const endAt = text.indexOf(end, valueStart);
+  if (endAt < 0) {
+    warnings.push(`${name} section has no end marker.`);
+    return "";
+  }
+  return text.slice(valueStart, endAt).trim();
+}
+
+export function parseComicAgentResult(response) {
+  const rawResponse = String(response ?? "").trim();
+  const warnings = [];
+  const content = markedSection(rawResponse, "CONTENT", warnings);
+  const assetsText = markedSection(rawResponse, "ASSETS", warnings);
+  const note = markedSection(rawResponse, "NOTE", warnings);
+  const memory = markedSection(rawResponse, "MEMORY", warnings);
+  const critic = markedSection(rawResponse, "CRITIC", warnings);
+  const allowedAssetTypes = new Set(["character", "storyboard", "panel", "reference"]);
+  const assets = assetsText.split("\n").map((line, index) => {
+    const source = line.trim();
+    if (!source || source === "없음") return null;
+    const [type, targetId, url, label] = source.split("|").map((value) => value?.trim() || "");
+    if (!allowedAssetTypes.has(type) || !url) {
+      warnings.push(`ASSETS line ${index + 1} is invalid.`);
+      return { source, valid: false };
+    }
+    return { source, type, targetId, url, label, valid: true };
+  }).filter(Boolean);
+
+  return { rawResponse, content, assets, note, memory, critic, warnings };
+}
+
+export function buildGenerationRequest(episode, values = {}) {
+  const panel = episode.panels?.find((item) => item.id === values.panelId) ?? null;
+  const referenceIds = String(values.referenceIds || "").split(",").map((item) => item.trim()).filter(Boolean);
+  return {
+    id: `GEN-REQUEST-${Date.now()}`,
+    panelId: panel?.id || values.panelId || "",
+    panelDescription: panel?.description || "",
+    dna: referenceIds,
+    previousState: String(values.previousState || "").trim(),
+    delta: String(values.delta || "").trim(),
+    camera: String(values.camera || "").trim(),
+    narrativeFunction: String(values.narrativeFunction || "information").trim(),
+    qualityTier: ["A", "B", "C"].includes(values.qualityTier) ? values.qualityTier : "B",
+    candidateCount: Math.min(4, Math.max(1, Number(values.candidateCount) || 2)),
+    createdAt: now()
+  };
+}
+
+export function comicHandoffPacket(store, project, episode, task, request = "", generationRequest = null) {
   const relevantMemory = (store.memory || []).filter((item) => {
     if (item.status !== "active") return false;
     return !item.scope?.projectId || item.scope.projectId === project.id;
@@ -347,6 +405,7 @@ export function comicHandoffPacket(store, project, episode, task, request = "") 
       panels: episode.panels.map(({ id, order, description, dialogue, imageUrl, status }) => ({ id, order, description, dialogue, imageUrl, status }))
     },
     approvedMemory: relevantMemory.map(({ statement, source, scope, assetUrl }) => ({ statement, source, scope, assetUrl })),
+    generationRequest,
     targetRoot: `projects/${project.id}/episodes/${episode.id}`,
     operatingRules: [
       "CLE5 외부 시스템의 데이터나 경로를 사용하지 않는다.",
@@ -361,6 +420,8 @@ export function comicHandoffPacket(store, project, episode, task, request = "") 
       assetsEnd: "---CLE5-ASSETS-END---",
       noteStart: "---CLE5-NOTE-START---",
       noteEnd: "---CLE5-NOTE-END---",
+      criticStart: "---CLE5-CRITIC-START---",
+      criticEnd: "---CLE5-CRITIC-END---",
       memoryStart: "---CLE5-MEMORY-START---",
       memoryEnd: "---CLE5-MEMORY-END---"
     }
